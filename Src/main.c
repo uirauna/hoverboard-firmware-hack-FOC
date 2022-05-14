@@ -70,6 +70,11 @@ extern uint8_t     inIdx_prev;
 extern InputStruct input1[];            // input structure
 extern InputStruct input2[];            // input structure
 
+#if defined(SUPPORT_BUTTONS) || defined(SUPPORT_BUTTONS_LEFT) || defined(SUPPORT_BUTTONS_RIGHT)
+extern uint8_t button1;                 // Blue
+extern uint8_t button2;                 // Green
+#endif
+
 extern int16_t speedAvg;                // Average measured speed
 extern int16_t speedAvgAbs;             // Average measured speed in absolute
 extern volatile uint32_t timeoutCntGen; // Timeout counter for the General timeout (PPM, PWM, Nunchuk)
