@@ -187,8 +187,8 @@ static uint32_t commandR_len = sizeof(commandR);
 #endif
 
 #if defined(SUPPORT_BUTTONS) || defined(SUPPORT_BUTTONS_LEFT) || defined(SUPPORT_BUTTONS_RIGHT)
-static uint8_t button1;                 // Blue
-static uint8_t button2;                 // Green
+uint8_t button1;                 // Blue
+uint8_t button2;                 // Green
 #endif
 
 #ifdef VARIANT_HOVERCAR
