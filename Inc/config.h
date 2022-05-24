@@ -222,7 +222,7 @@
 */
 // #define CRUISE_CONTROL_SUPPORT
 // #define SUPPORT_BUTTONS_LEFT              // Use button1 (Blue Left cable)  to activate/deactivate Cruise Control
-// #define SUPPORT_BUTTONS_RIGHT             // Use button1 (Blue Right cable) to activate/deactivate Cruise Control
+#define SUPPORT_BUTTONS_RIGHT             // Use button1 (Blue Right cable) to activate/deactivate Cruise Control
 
 // ######################### END OF CRUISE CONTROL SETTINGS ##########################
 
