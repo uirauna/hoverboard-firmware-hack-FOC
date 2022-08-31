@@ -18,10 +18,8 @@ Table of Contents
 * [Projects and Links](#projects-and-links)
 * [Contributions](#contributions)
 
-#### For the hoverboard sideboard firmware, see the following repositories:
- - [hoverboard-sideboard-hack-GD](https://github.com/EFeru/hoverboard-sideboard-hack-GD)
- - [hoverboard-sideboard-hack-STM](https://github.com/EFeru/hoverboard-sideboard-hack-STM)
- 
+#### The hoverboards with mainboards also come with 2 sideboards(not [splitboards](https://github.com/EFeru/hoverboard-firmware-hack-FOC/wiki/Firmware-Compatibility#split-boards)), check the following [wiki](https://github.com/EFeru/hoverboard-firmware-hack-FOC/wiki/Sideboards) about this firmware
+
 #### For the FOC controller design, see the following repository:
  - [bldc-motor-control-FOC](https://github.com/EFeru/bldc-motor-control-FOC)
 
@@ -55,14 +53,14 @@ For the reverse-engineered schematics of the mainboard, see [20150722_hoverboard
 ---
 ## FOC Firmware
  
-In this firmware 3 control types are available:
-- Commutation
-- SIN (Sinusoidal)
-- FOC (Field Oriented Control) with the following 3 control modes:
-  - **VOLTAGE MODE**: in this mode the controller applies a constant Voltage to the motors. Recommended for robotics applications or applications where a fast motor response is required.
-  - **SPEED MODE**: in this mode a closed-loop controller realizes the input speed target by rejecting any of the disturbance (resistive load) applied to the motor. Recommended for robotics applications or constant speed applications.
-  - **TORQUE MODE**: in this mode the input torque target is realized. This mode enables motor "freewheeling" when the torque target is `0`. Recommended for most applications with a sitting human driver.
-  
+In this firmware 3 control types are available, it can be set in config.h file via CTRL_TYP_SEL parameter:
+- Commutation (COM_CTRL)
+- Sinusoidal (SIN_CTRL)
+- Field Oriented Control (FOC_CTRL) with the following 3 control modes that can be set in config.h file with parameter CTRL_MOD_REQ:
+  - **VOLTAGE MODE(VLT_MODE)**: in this mode the controller applies a constant Voltage to the motors. Recommended for robotics applications or applications where a fast motor response is required.
+  - **SPEED MODE(SPD_MODE)**: in this mode a closed-loop controller realizes the input speed target by rejecting any of the disturbance (resistive load) applied to the motor. Recommended for robotics applications or constant speed applications.
+  - **TORQUE MODE(TRQ_MODE)**: in this mode the input torque target is realized. This mode enables motor "freewheeling" when the torque target is `0`. Recommended for most applications with a sitting human driver.
+
 #### Comparison between different control methods
 
 |Control method| Complexity | Efficiency | Smoothness | Field Weakening | Freewheeling | Standstill hold |
