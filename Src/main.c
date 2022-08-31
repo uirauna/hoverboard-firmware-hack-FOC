@@ -80,7 +80,6 @@ extern uint8_t button3;                 // PA13
 extern uint8_t button4;                 // PA14
 #endif
 
-
 extern int16_t speedAvg;                // Average measured speed
 extern int16_t speedAvgAbs;             // Average measured speed in absolute
 extern volatile uint32_t timeoutCntGen; // Timeout counter for the General timeout (PPM, PWM, Nunchuk)
@@ -173,8 +172,8 @@ static int16_t    speed;                // local variable for speed. -1000 to 10
 static uint32_t    buzzerTimer_prev = 0;
 static uint32_t    inactivity_timeout_counter;
 static MultipleTap MultipleTapBrake;    // define multiple tap functionality for the Brake pedal
-
 static uint16_t rate = RATE; // Adjustable rate to support multiple drive modes on startup
+static uint8_t charger;
 
 #ifdef MULTI_MODE_DRIVE
   static uint8_t drive_mode;
@@ -252,6 +251,10 @@ int main(void) {
   // Loop until button is released
   while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
 
+  #ifdef SUPPORT_BUTTONS_SWD
+    MX_GPIO_Init_SWD();
+  #endif
+
   #ifdef MULTI_MODE_DRIVE
     // Wait until triggers are released
     while((adc_buffer.l_rx2 + adc_buffer.l_tx2) >= (input1[0].min + input2[0].min)) { HAL_Delay(10); }
@@ -259,7 +262,6 @@ int main(void) {
 
   while(1) {
     if (buzzerTimer - buzzerTimer_prev > 16*DELAY_IN_MAIN_LOOP) {   // 1 ms = 16 ticks buzzerTimer
-
     readCommand();                        // Read Command: input1[inIdx].cmd, input2[inIdx].cmd
     calcAvgSpeed();                       // Calculate average measured speed: speedAvg, speedAvgAbs
 
@@ -279,7 +281,8 @@ int main(void) {
       if (inIdx == CONTROL_ADC) {                                   // Only use use implementation below if pedals are in use (ADC input)
         if (speedAvgAbs < 60) {                                     // Check if Hovercar is physically close to standstill to enable Double tap detection on Brake pedal for Reverse functionality
           // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
-          if (!button3 && !button4){
+          charger = !HAL_GPIO_ReadPin(CHARGER_PORT, CHARGER_PIN);
+          if ((!button3 && !button4) || charger){
             if (enable == 1){
               beepShort(4);                     // make 2 beeps indicating the motor enable
               beepShort(6); HAL_Delay(100);

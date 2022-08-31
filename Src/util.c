@@ -196,6 +196,7 @@ uint8_t button3;                 // PA13
 uint8_t button4;                 // PA14
 #endif
 
+
 #ifdef VARIANT_HOVERCAR
 static uint8_t brakePressed;
 #endif
