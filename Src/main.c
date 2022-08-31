@@ -75,6 +75,12 @@ extern uint8_t button1;                 // Blue
 extern uint8_t button2;                 // Green
 #endif
 
+#if defined(SUPPORT_BUTTONS_SWD)
+extern uint8_t button3;                 // PA13
+extern uint8_t button4;                 // PA14
+#endif
+
+
 extern int16_t speedAvg;                // Average measured speed
 extern int16_t speedAvgAbs;             // Average measured speed in absolute
 extern volatile uint32_t timeoutCntGen; // Timeout counter for the General timeout (PPM, PWM, Nunchuk)
