@@ -130,6 +130,7 @@ typedef struct{
   int16_t   speedL_meas;
   int16_t   batVoltage;
   int16_t   boardTemp;
+  int16_t   dc_curr;
   uint16_t  cmdLed;
   uint16_t  checksum;
 } SerialFeedback;
@@ -257,17 +258,6 @@ int main(void) {
     calcAvgSpeed();                       // Calculate average measured speed: speedAvg, speedAvgAbs
 
     #ifndef VARIANT_TRANSPOTTER
-      // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
-      if (enable == 0 && !rtY_Left.z_errCode && !rtY_Right.z_errCode && 
-          ABS(input1[inIdx].cmd) < 50 && ABS(input2[inIdx].cmd) < 50){
-        beepShort(6);                     // make 2 beeps indicating the motor enable
-        beepShort(4); HAL_Delay(100);
-        steerFixdt = speedFixdt = 0;      // reset filters
-        enable = 1;                       // enable motors
-        #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
-        printf("-- Motors enabled --\r\n");
-        #endif
-      }
 
       // ####### VARIANT_HOVERCAR #######
       #if defined(VARIANT_HOVERCAR) || defined(VARIANT_SKATEBOARD) || defined(ELECTRIC_BRAKE_ENABLE)
@@ -282,7 +272,33 @@ int main(void) {
       #ifdef VARIANT_HOVERCAR
       if (inIdx == CONTROL_ADC) {                                   // Only use use implementation below if pedals are in use (ADC input)
         if (speedAvgAbs < 60) {                                     // Check if Hovercar is physically close to standstill to enable Double tap detection on Brake pedal for Reverse functionality
-          multipleTapDet(input1[inIdx].cmd, HAL_GetTick(), &MultipleTapBrake); // Brake pedal in this case is "input1" variable
+          // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
+          if (!button3 && !button4){
+            if (enable == 1){
+              beepShort(4);                     // make 2 beeps indicating the motor enable
+              beepShort(6); HAL_Delay(100);
+              steerFixdt = speedFixdt = 0;      // reset filters
+              enable = 0;                       // enable motors
+              #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+              printf("-- Motors disabled --\r\n");
+              #endif
+            }
+          }
+          else{
+            if (enable == 0 && !rtY_Left.z_errCode && !rtY_Right.z_errCode && 
+                ABS(input1[inIdx].cmd) < 50 && ABS(input2[inIdx].cmd) < 50){
+              beepShort(6);                     // make 2 beeps indicating the motor enable
+              beepShort(4); HAL_Delay(100);
+              steerFixdt = speedFixdt = 0;      // reset filters
+              enable = 1;                       // enable motors
+              #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+              printf("-- Motors enabled --\r\n");
+              #endif
+            }
+          }
+          
+          //multipleTapDet(input1[inIdx].cmd, HAL_GetTick(), &MultipleTapBrake); // Brake pedal in this case is "input1" variable
+          MultipleTapBrake.b_multipleTap = button3;
         }
 
         if (input1[inIdx].cmd > 30) {                               // If Brake pedal (input1) is pressed, bring to 0 also the Throttle pedal (input2) to avoid "Double pedal" driving
@@ -337,7 +353,7 @@ int main(void) {
         if (!MultipleTapBrake.b_multipleTap) {  // Check driving direction
           speed = steer + speed;                // Forward driving: in this case steer = Brake, speed = Throttle
         } else {
-          speed = steer - speed;                // Reverse driving: in this case steer = Brake, speed = Throttle
+          speed = steer - speed/2;                // Reverse driving: in this case steer = Brake, speed = Throttle
         }
         steer = 0;                              // Do not apply steering to avoid side effects if STEER_COEFFICIENT is NOT 0
       }
@@ -518,12 +534,13 @@ int main(void) {
         Feedback.speedL_meas	  = (int16_t)rtY_Left.n_mot;
         Feedback.batVoltage	    = (int16_t)batVoltageCalib;
         Feedback.boardTemp	    = (int16_t)board_temp_deg_c;
+        Feedback.dc_curr        = (int16_t)dc_curr;   
 
         #if defined(FEEDBACK_SERIAL_USART2)
           if(__HAL_DMA_GET_COUNTER(huart2.hdmatx) == 0) {
             Feedback.cmdLed     = (uint16_t)sideboard_leds_L;
             Feedback.checksum   = (uint16_t)(Feedback.start ^ Feedback.cmd1 ^ Feedback.cmd2 ^ Feedback.speedR_meas ^ Feedback.speedL_meas 
-                                           ^ Feedback.batVoltage ^ Feedback.boardTemp ^ Feedback.cmdLed);
+                                           ^ Feedback.batVoltage ^ Feedback.boardTemp ^ Feedback.dc_curr ^ Feedback.cmdLed);
 
             HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&Feedback, sizeof(Feedback));
           }
@@ -532,7 +549,7 @@ int main(void) {
           if(__HAL_DMA_GET_COUNTER(huart3.hdmatx) == 0) {
             Feedback.cmdLed     = (uint16_t)sideboard_leds_R;
             Feedback.checksum   = (uint16_t)(Feedback.start ^ Feedback.cmd1 ^ Feedback.cmd2 ^ Feedback.speedR_meas ^ Feedback.speedL_meas 
-                                           ^ Feedback.batVoltage ^ Feedback.boardTemp ^ Feedback.cmdLed);
+                                           ^ Feedback.batVoltage ^ Feedback.boardTemp ^ Feedback.dc_curr ^ Feedback.cmdLed);
 
             HAL_UART_Transmit_DMA(&huart3, (uint8_t *)&Feedback, sizeof(Feedback));
           }

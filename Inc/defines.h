@@ -185,6 +185,13 @@
 #define BUTTON2_PORT        GPIOB
 #endif
 
+#if defined(SUPPORT_BUTTONS_SWD)
+#define BUTTON3_PIN         GPIO_PIN_13
+#define BUTTON3_PORT        GPIOA
+#define BUTTON4_PIN         GPIO_PIN_14
+#define BUTTON4_PORT        GPIOA
+#endif 
+
 #define DELAY_TIM_FREQUENCY_US 1000000
 
 #define MILLI_R (R * 1000)

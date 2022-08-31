@@ -191,6 +191,11 @@ uint8_t button1;                 // Blue
 uint8_t button2;                 // Green
 #endif
 
+#if defined(SUPPORT_BUTTONS_SWD)
+uint8_t button3;                 // PA13
+uint8_t button4;                 // PA14
+#endif
+
 #ifdef VARIANT_HOVERCAR
 static uint8_t brakePressed;
 #endif
@@ -1078,6 +1083,11 @@ void readCommand(void) {
       button2 = !HAL_GPIO_ReadPin(BUTTON2_PORT, BUTTON2_PIN);
     #endif
 
+    #if defined(SUPPORT_BUTTONS_SWD)
+      button3 = !HAL_GPIO_ReadPin(BUTTON3_PORT, BUTTON3_PIN);
+      button4 = !HAL_GPIO_ReadPin(BUTTON4_PORT, BUTTON4_PIN);
+    #endif
+
     #if defined(CRUISE_CONTROL_SUPPORT) && (defined(SUPPORT_BUTTONS) || defined(SUPPORT_BUTTONS_LEFT) || defined(SUPPORT_BUTTONS_RIGHT))
         cruiseControl(button1);                                           // Cruise control activation/deactivation
     #endif
@@ -1558,11 +1568,19 @@ void poweroff(void) {
 void poweroffPressCheck(void) {
   #if !defined(VARIANT_HOVERBOARD) && !defined(VARIANT_TRANSPOTTER)
     if(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {
+      #if defined(SUPPORT_BUTTONS_SWD)
+        __HAL_AFIO_REMAP_SWJ_ENABLE();
+      #endif
+
       uint16_t cnt_press = 0;
       while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {
         HAL_Delay(10);
         if (cnt_press++ == 5 * 100) { beepShort(5); }
       }
+      
+      #if defined(SUPPORT_BUTTONS_SWD)
+        __HAL_AFIO_REMAP_SWJ_DISABLE();
+      #endif
 
       if (cnt_press > 8) enable = 0;
 

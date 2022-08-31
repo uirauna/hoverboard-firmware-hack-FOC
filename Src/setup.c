@@ -486,6 +486,20 @@ void MX_GPIO_Init(void) {
   HAL_GPIO_Init(RIGHT_TIM_WL_PORT, &GPIO_InitStruct);
 }
 
+void MX_GPIO_Init_SWD(void) {
+  GPIO_InitTypeDef GPIO_InitStruct;
+
+  __HAL_AFIO_REMAP_SWJ_DISABLE();
+  
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pin  = BUTTON3_PIN;
+  HAL_GPIO_Init(BUTTON3_PORT, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin  = BUTTON4_PIN;
+  HAL_GPIO_Init(BUTTON4_PORT, &GPIO_InitStruct);
+}
+
 void MX_TIM_Init(void) {
   __HAL_RCC_TIM1_CLK_ENABLE();
   __HAL_RCC_TIM8_CLK_ENABLE();
