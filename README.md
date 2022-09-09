@@ -8,6 +8,8 @@ When the charger is plugged, the motors will also be disabled.
 
 This works only with the Hovercar variant.
 
+As the programming pins are used, the code makes sure the board has the programming enabled when the on/off button is pressed. 
+
 
 # hoverboard-firmware-hack-FOC
 [![Build status](https://github.com/EFeru/hoverboard-firmware-hack-FOC/actions/workflows/build_on_commit.yml/badge.svg)](https://github.com/EFeru/hoverboard-firmware-hack-FOC/actions/workflows/build_on_commit.yml)
