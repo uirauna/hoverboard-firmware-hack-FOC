@@ -1,3 +1,14 @@
+With this branch, a [3 position knob](https://fr.aliexpress.com/item/4000334275723.html?spm=a2g0o.productlist.0.0.7a13bbc5mjEUqo&algo_pvid=cceb4f2e-8a6d-4382-acee-5e0d7f31be14&algo_exp_id=cceb4f2e-8a6d-4382-acee-5e0d7f31be14-3&pdp_ext_f=%7B%22sku_id%22%3A%2210000001373349343%22%7D&pdp_npi=2%40dis%21EUR%213.3%213.14%21%21%211.5%21%21%402100bde116627344714884860eeb7a%2110000001373349343%21sea&curPageLogUid=z2HfPjsHkVrC) can be used for Forward/Stop/Reverse.
+It will connect PA13 to ground in Reverse position, and PA14 to ground in Forward Position.
+In stop position, none of the inputs are connected to ground, so the motors are disabled.
+
+Throttle value has been divided by 2 in reverse mode to reduce the speed.
+
+When the charger is plugged, the motors will also be disabled.
+
+This works only with the Hovercar variant.
+
+
 # hoverboard-firmware-hack-FOC
 [![Build status](https://github.com/EFeru/hoverboard-firmware-hack-FOC/actions/workflows/build_on_commit.yml/badge.svg)](https://github.com/EFeru/hoverboard-firmware-hack-FOC/actions/workflows/build_on_commit.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
