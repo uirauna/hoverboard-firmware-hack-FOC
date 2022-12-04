@@ -6,13 +6,13 @@
     "vscode": {
       "extensions": [
        "platformio.platformio-ide",
-      ]
+      ],
     },
     "codespaces": {
       "openFiles": [
-        "README.md",
         "Inc/config.h",
       ]
     }
-  }
+  },
+  "postCreateCommand": "python -m pip install -U pyocd",
 }
