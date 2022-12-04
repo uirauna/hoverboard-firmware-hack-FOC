@@ -1,6 +1,12 @@
 {
   "image": "mcr.microsoft.com/devcontainers/universal:2",
-  "extensions": {
-    "platformio.platformio-ide"
+  "features": {
+  },
+  "customizations": {
+		"vscode": {
+			"extensions": [
+				"platformio.platformio-ide",
+			]
+		}
   }
 }
