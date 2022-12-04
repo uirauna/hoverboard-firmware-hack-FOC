@@ -3,10 +3,16 @@
   "features": {
   },
   "customizations": {
-		"vscode": {
-			"extensions": [
-				"platformio.platformio-ide",
-			]
-		}
+    "vscode": {
+      "extensions": [
+       "platformio.platformio-ide",
+      ]
+    },
+    "codespaces": {
+      "openFiles": [
+        "README.md",
+        "Inc/config.h",
+      ]
+    }
   }
 }
