@@ -10,7 +10,10 @@
 	},
 
 	// Add the IDs of extensions you want installed when the container is created.
-	"extensions": ["ms-vscode.cpptools", "platformio.platformio-ide"],
+	"extensions": [
+		"ms-vscode.cpptools",
+		"ms-vscode.cpptools-extension-pack",
+		"platformio.platformio-ide"],
 
 	"forwardPorts": [
 		// PIO Home is blank if its port isn't exosed from within the container.
