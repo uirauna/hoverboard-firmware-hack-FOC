@@ -4,11 +4,13 @@
 
 	// Set *default* container specific settings.json values on container create.
 	"settings": { 
-		"terminal.integrated.shell.linux": "/bin/bash"
+		"terminal.integrated.shell.linux": "/bin/bash",
+	        "platformio-ide.pioHomeServerHttpPort": 8008,
+                "platformio-ide.disablePIOHomeStartup": true
 	},
 
 	// Add the IDs of extensions you want installed when the container is created.
-	"extensions": ["ms-vscode.cpptools", "platformio.platformio-ide", "eamodio.gitlens"],
+	"extensions": ["ms-vscode.cpptools", "platformio.platformio-ide"],
 
 	"forwardPorts": [
 		// PIO Home is blank if its port isn't exosed from within the container.
@@ -21,11 +23,13 @@
 	],
 
 	"remoteUser": "vscode",
-	"codespaces": {
-          "openFiles": [
-            "Inc/config.h",
-          ]
-        },
+	"customizations": {
+	  "codespaces": {
+	    "openFiles": [
+	      "Inc/config.h"
+	    ]
+	  }
+	},
 
 	"mounts": [
 		// Mount the host's device to this container's.
