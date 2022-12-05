@@ -50,3 +50,4 @@ RUN curl -fLo /etc/udev/rules.d/99-platformio-udev.rules --create-dirs https://r
 
 USER $USERNAME
 RUN python3 -c "$(curl -fsSL https://raw.githubusercontent.com/platformio/platformio/develop/scripts/get-platformio.py)"
+RUN python3 -m pip install -U pyocd
