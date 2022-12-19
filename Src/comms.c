@@ -30,7 +30,7 @@
 #include "comms.h"
 
 #if defined(DEBUG_SERIAL_PROTOCOL)
-#if defined(DEBUG_SERIAL_PROTOCOL) && (defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3))
+#if defined(DEBUG_SERIAL_PROTOCOL) && (defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT))
 
 #ifdef CONTROL_ADC
   #define RAW_MIN 0

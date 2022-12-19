@@ -30,6 +30,7 @@
 #include "BLDC_controller.h"
 #include "rtwtypes.h"
 #include "comms.h"
+#include "SEGGER_RTT.h"
 
 #if defined(DEBUG_I2C_LCD) || defined(SUPPORT_LCD)
 #include "hd44780.h"
@@ -202,7 +203,7 @@ static uint8_t standstillAcv = 0;
 
 /* =========================== Retargeting printf =========================== */
 /* retarget the C library printf function to the USART */
-#if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+#if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
   #ifdef __GNUC__
     #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
   #else
@@ -213,6 +214,10 @@ static uint8_t standstillAcv = 0;
       HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 1000);
     #elif defined(DEBUG_SERIAL_USART3)
       HAL_UART_Transmit(&huart3, (uint8_t *)&ch, 1, 1000);
+    #endif
+
+    #if defined(DEBUG_SEGGER_RTT)
+      SEGGER_RTT_Write(0, (uint8_t *)&ch, 1);
     #endif
     return ch;
   }
@@ -303,7 +308,7 @@ void Input_Init(void) {
     EE_Init();            /* EEPROM Init */
     EE_ReadVariable(VirtAddVarTab[0], &writeCheck);
     if (writeCheck == FLASH_WRITE_KEY) {
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
         printf("Using the configuration from EEprom\r\n");
       #endif
 
@@ -324,7 +329,7 @@ void Input_Init(void) {
           input2[i].typ, input2[i].min, input2[i].mid, input2[i].max);
       }
     } else {
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
         printf("Using the configuration from config.h\r\n");
       #endif
 
@@ -506,7 +511,7 @@ void adcCalibLim(void) {
 
 #if !defined(VARIANT_HOVERBOARD) && !defined(VARIANT_TRANSPOTTER)
 
-  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
   printf("Input calibration started...\r\n");
   #endif
 
@@ -544,32 +549,32 @@ void adcCalibLim(void) {
     HAL_Delay(5);
   }
 
-  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
   printf("Input1 is ");
   #endif
   uint8_t input1TypTemp = checkInputType(INPUT1_MIN_temp, INPUT1_MID_temp, INPUT1_MAX_temp);
   if (input1TypTemp == input1[inIdx].typDef || input1[inIdx].typDef == 3) {  // Accept calibration only if the type is correct OR type was set to 3 (auto)
-    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
     printf("..OK\r\n");
     #endif
   } else {
     input1TypTemp = 0; // Disable input
-    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
     printf("..NOK\r\n");
     #endif
   }
 
-  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
   printf("Input2 is ");
   #endif
   uint8_t input2TypTemp = checkInputType(INPUT2_MIN_temp, INPUT2_MID_temp, INPUT2_MAX_temp);
   if (input2TypTemp == input2[inIdx].typDef || input2[inIdx].typDef == 3) {  // Accept calibration only if the type is correct OR type was set to 3 (auto)
-    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
     printf("..OK\r\n");
     #endif
   } else {
     input2TypTemp = 0; // Disable input
-    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
     printf("..NOK\r\n");
     #endif
   }
@@ -588,13 +593,13 @@ void adcCalibLim(void) {
     input2[inIdx].max = INPUT2_MAX_temp - input_margin;
 
     inp_cal_valid = 1;    // Mark calibration to be saved in Flash at shutdown
-    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
     printf("Limits Input1: TYP:%i MIN:%i MID:%i MAX:%i\r\nLimits Input2: TYP:%i MIN:%i MID:%i MAX:%i\r\n",
             input1[inIdx].typ, input1[inIdx].min, input1[inIdx].mid, input1[inIdx].max,
             input2[inIdx].typ, input2[inIdx].min, input2[inIdx].mid, input2[inIdx].max);
     #endif
   }else{
-    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
     printf("Both inputs cannot be ignored, calibration rejected.\r\n");
     #endif
   }
@@ -617,7 +622,7 @@ void updateCurSpdLim(void) {
 
 #if !defined(VARIANT_HOVERBOARD) && !defined(VARIANT_TRANSPOTTER)
 
-  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
   printf("Torque and Speed limits update started...\r\n");
   #endif
 
@@ -651,7 +656,7 @@ void updateCurSpdLim(void) {
     cur_spd_valid  += 2;  // Mark update to be saved in Flash at shutdown
   }
 
-  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
   // cur_spd_valid: 0 = No limit changed, 1 = Current limit changed, 2 = Speed limit changed, 3 = Both limits changed
   printf("Limits (%i)\r\nCurrent: fixdt:%li factor%i i_max:%i \r\nSpeed: fixdt:%li factor:%i n_max:%i\r\n",
           cur_spd_valid, input1_fixdt, cur_factor, rtP_Left.i_max, input2_fixdt, spd_factor, rtP_Left.n_max);
@@ -767,25 +772,25 @@ int checkInputType(int16_t min, int16_t mid, int16_t max){
 
   if ((min / threshold) == (max / threshold) || (mid / threshold) == (max / threshold) || min > max || mid > max) {
     type = 0;
-    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
     printf("ignored");                // (MIN and MAX) OR (MID and MAX) are close, disable input
     #endif
   } else {
     if ((min / threshold) == (mid / threshold)){
       type = 1;
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
       printf("a normal pot");        // MIN and MID are close, it's a normal pot
       #endif
     } else {
       type = 2;
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
       printf("a mid-resting pot");   // it's a mid resting pot
       #endif
     }
 
     #ifdef CONTROL_ADC
     if ((min + ADC_MARGIN - ADC_PROTECT_THRESH) > 0 && (max - ADC_MARGIN + ADC_PROTECT_THRESH) < 4095) {
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
       printf(" AND protected");
       #endif
       beepLong(2); // Indicate protection by a beep
@@ -1514,7 +1519,7 @@ void saveConfig() {
   #endif
   #if !defined(VARIANT_HOVERBOARD) && !defined(VARIANT_TRANSPOTTER)
     if (inp_cal_valid || cur_spd_valid) {
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
         printf("Saving configuration to EEprom\r\n");
       #endif
 
@@ -1540,7 +1545,7 @@ void saveConfig() {
 
 void poweroff(void) {
   enable = 0;
-  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
   printf("-- Motors disabled --\r\n");
   #endif
   buzzerCount = 0;  // prevent interraction with beep counter
@@ -1581,7 +1586,7 @@ void poweroffPressCheck(void) {
           #endif
         }
       } else if (cnt_press > 8) {                         // Short press: power off (80 ms debounce)
-        #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
           printf("Powering off, button has been pressed\r\n");
         #endif
       poweroff();
