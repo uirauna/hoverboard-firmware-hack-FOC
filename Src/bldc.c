@@ -124,11 +124,15 @@ void DMA1_Channel1_IRQHandler(void) {
     LEFT_TIM->BDTR |= TIM_BDTR_MOE;
   }
 
+   
   if(ABS(curR_DC)  > curDC_max || enable == 0) {
     RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
   } else {
+    #ifdef MOTOR_RIGHT_ENA
     RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
+    #endif
   }
+  
 
   // Create square wave for buzzer
   buzzerTimer++;
@@ -155,6 +159,9 @@ void DMA1_Channel1_IRQHandler(void) {
   }
 
   // ############################### MOTOR CONTROL ###############################
+  
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_3);
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
 
   int ul, vl, wl;
   int ur, vr, wr;
@@ -204,9 +211,13 @@ void DMA1_Channel1_IRQHandler(void) {
     LEFT_TIM->LEFT_TIM_U    = (uint16_t)CLAMP(ul + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
     LEFT_TIM->LEFT_TIM_V    = (uint16_t)CLAMP(vl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
     LEFT_TIM->LEFT_TIM_W    = (uint16_t)CLAMP(wl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    
   // =================================================================
   
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_3);
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
 
+  #ifdef MOTOR_RIGHT_ENA
   // ========================= RIGHT MOTOR ===========================  
     // Get hall sensors values
     uint8_t hall_ur = !(RIGHT_HALL_U_PORT->IDR & RIGHT_HALL_U_PIN);
@@ -226,9 +237,7 @@ void DMA1_Channel1_IRQHandler(void) {
     // rtU_Right.a_mechAngle   = ...; // Angle input in DEGREES [0,360] in fixdt(1,16,4) data type. If `angle` is float use `= (int16_t)floor(angle * 16.0F)` If `angle` is integer use `= (int16_t)(angle << 4)`
     
     /* Step the controller */
-    #ifdef MOTOR_RIGHT_ENA
     BLDC_controller_step(rtM_Right);
-    #endif
 
     /* Get motor outputs here */
     ur            = rtY_Right.DC_phaA;
@@ -243,6 +252,7 @@ void DMA1_Channel1_IRQHandler(void) {
     RIGHT_TIM->RIGHT_TIM_V  = (uint16_t)CLAMP(vr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
     RIGHT_TIM->RIGHT_TIM_W  = (uint16_t)CLAMP(wr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
   // =================================================================
+  #endif
 
   /* Indicate task complete */
   OverrunFlag = false;

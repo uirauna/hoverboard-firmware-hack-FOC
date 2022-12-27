@@ -415,6 +415,13 @@ void MX_GPIO_Init(void) {
   GPIO_InitStruct.Pin = OFF_PIN;
   HAL_GPIO_Init(OFF_PORT, &GPIO_InitStruct);
 
+  //Analog in
+  #if !defined(SUPPORT_BUTTONS_LEFT)
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = GPIO_PIN_2;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  #endif
 
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
 
@@ -438,14 +445,6 @@ void MX_GPIO_Init(void) {
 
   GPIO_InitStruct.Pin = DCLINK_PIN;
   HAL_GPIO_Init(DCLINK_PORT, &GPIO_InitStruct);
-
-  //Analog in
-  #if !defined(SUPPORT_BUTTONS_LEFT)
-  GPIO_InitStruct.Pin = GPIO_PIN_3;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = GPIO_PIN_2;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-  #endif
 
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 
@@ -621,7 +620,7 @@ void MX_ADC1_Init(void) {
   HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
   // sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
-  sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
+  //sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
   sConfig.Channel = ADC_CHANNEL_0;  // pa0 right a   ->  left
   sConfig.Rank    = 2;
   HAL_ADC_ConfigChannel(&hadc1, &sConfig);
@@ -639,7 +638,7 @@ void MX_ADC1_Init(void) {
   HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
   //temperature requires at least 17.1uS sampling time
-  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  // sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
   sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;  // internal temp
   sConfig.Rank    = 5;
   HAL_ADC_ConfigChannel(&hadc1, &sConfig);
@@ -687,7 +686,7 @@ void MX_ADC2_Init(void) {
   HAL_ADC_ConfigChannel(&hadc2, &sConfig);
 
   // sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
-  sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
+  // sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
   sConfig.Channel = ADC_CHANNEL_13;  // pc3 right b   -> left
   sConfig.Rank    = 2;
   HAL_ADC_ConfigChannel(&hadc2, &sConfig);
