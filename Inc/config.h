@@ -252,6 +252,7 @@
 // #define DEBUG_SERIAL_USART2          // left sensor board cable, disable if ADC or PPM is used!
 // #define DEBUG_SERIAL_USART3          // right sensor board cable, disable if I2C (nunchuk or lcd) is used!
 // #define DEBUG_SERIAL_PROTOCOL        // uncomment this to send user commands to the board, change parameters and print specific signals (see comms.c for the user commands)
+#define DEBUG_SEGGER_RTT             // uncomment to enable debug via stlink
 // ########################### END OF DEBUG SERIAL ############################
 
 
@@ -416,7 +417,7 @@
 // ################################# VARIANT_PWM SETTINGS ##############################
 #ifdef VARIANT_PWM
 /* ###### CONTROL VIA RC REMOTE ######
- * Right sensor board cable. Connect PA2 to channel 1 and PA3 to channel 2 on receiver.
+ * Right sensor board cable. Connect PB10 to channel 1 and PB11 to channel 2 on receiver.
  * Channel 1: steering, Channel 2: speed.
 */
   // #define DUAL_INPUTS                     // ADC*(Primary) + PWM(Auxiliary). Uncomment this to use Dual-inputs

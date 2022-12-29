@@ -30,6 +30,7 @@
 #include "BLDC_controller.h"      /* BLDC's header file */
 #include "rtwtypes.h"
 #include "comms.h"
+#include "SEGGER_RTT.h"
 
 #if defined(DEBUG_I2C_LCD) || defined(SUPPORT_LCD)
 #include "hd44780.h"
@@ -204,6 +205,10 @@ int main(void) {
   MX_ADC1_Init();
   MX_ADC2_Init();
   BLDC_Init();        // BLDC Controller Init
+  #if defined(DEBUG_SEGGER_RTT)
+     SEGGER_RTT_Init();
+  #endif
+
 
   HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_SET);   // Activate Latch
   Input_Lim_Init();   // Input Limitations Init
@@ -490,7 +495,7 @@ int main(void) {
     dc_curr       = left_dc_curr + right_dc_curr;            // Total DC Link Current * 100
 
     // ####### DEBUG SERIAL OUT #######
-    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+    #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
       if (main_loop_counter % 25 == 0) {    // Send data periodically every 125 ms      
         #if defined(DEBUG_SERIAL_PROTOCOL)
           process_debug();
@@ -545,12 +550,12 @@ int main(void) {
 
     // ####### BEEP AND EMERGENCY POWEROFF #######
     if (TEMP_POWEROFF_ENABLE && board_temp_deg_c >= TEMP_POWEROFF && speedAvgAbs < 20){  // poweroff before mainboard burns OR low bat 3
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
         printf("Powering off, temperature is too high\r\n");
       #endif
       poweroff();
     } else if ( BAT_DEAD_ENABLE && batVoltage < BAT_DEAD && speedAvgAbs < 20){
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
         printf("Powering off, battery voltage is too low\r\n");
       #endif
       poweroff();
@@ -592,12 +597,14 @@ int main(void) {
       }
     #endif
 
-    if (inactivity_timeout_counter > (INACTIVITY_TIMEOUT * 60 * 1000) / (DELAY_IN_MAIN_LOOP + 1)) {  // rest of main loop needs maybe 1ms
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
-        printf("Powering off, wheels were inactive for too long\r\n");
-      #endif
-      poweroff();
-    }
+    #if INACTIVITY_TIMEOUT > 0
+      if (inactivity_timeout_counter > (INACTIVITY_TIMEOUT * 60 * 1000) / (DELAY_IN_MAIN_LOOP + 1)) {  // rest of main loop needs maybe 1ms
+        #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+          printf("Powering off, wheels were inactive for too long\r\n");
+        #endif
+        poweroff();
+      }
+    #endif
 
 
     // HAL_GPIO_TogglePin(LED_PORT, LED_PIN);                 // This is to measure the main() loop duration with an oscilloscope connected to LED_PIN
