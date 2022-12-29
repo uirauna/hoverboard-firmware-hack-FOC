@@ -27,6 +27,7 @@
 #include "setup.h"
 #include "config.h"
 #include "util.h"
+#include <stdio.h>
 
 // Matlab includes and defines - from auto-code generation
 // ###############################################################################
@@ -70,13 +71,14 @@ static uint8_t enableFin    = 0;
 
 static const uint16_t pwm_res  = 64000000 / 2 / PWM_FREQ; // = 2000
 
-static uint16_t offsetcount = 0;
-static int16_t offsetrlA    = 2000;
-static int16_t offsetrlB    = 2000;
-static int16_t offsetrrB    = 2000;
-static int16_t offsetrrC    = 2000;
-static int16_t offsetdcl    = 2000;
-static int16_t offsetdcr    = 2000;
+static int32_T offset[2][4][7];
+static uint8_T calibState[2];
+static uint8_T test[2];
+static uint16_t offsetcount[2];
+void calibration(int8_t motor);
+void applyPWM(uint8_t motor,uint16_t u,uint16_t v,uint16_t w,uint8_t midclamp);
+uint16_t ul,vl,wl,ur,vr,wr;
+
 
 int16_t        batVoltage       = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE;
 static int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 16;  // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
@@ -90,14 +92,9 @@ void DMA1_Channel1_IRQHandler(void) {
   // HAL_GPIO_WritePin(LED_PORT, LED_PIN, 1);
   // HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
 
-  if(offsetcount < 2000) {  // calibrate ADC offsets
-    offsetcount++;
-    offsetrlA = (adc_buffer.rlA + offsetrlA) / 2;
-    offsetrlB = (adc_buffer.rlB + offsetrlB) / 2;
-    offsetrrB = (adc_buffer.rrB + offsetrrB) / 2;
-    offsetrrC = (adc_buffer.rrC + offsetrrC) / 2;
-    offsetdcl = (adc_buffer.dcl + offsetdcl) / 2;
-    offsetdcr = (adc_buffer.dcr + offsetdcr) / 2;
+  calibration(0);
+  calibration(1);
+  if (calibState[0] != 5 && calibState[1] != 5){
     return;
   }
 
@@ -107,14 +104,15 @@ void DMA1_Channel1_IRQHandler(void) {
   }
 
   // Get Left motor currents
-  curL_phaA = (int16_t)(offsetrlA - adc_buffer.rlA);
-  curL_phaB = (int16_t)(offsetrlB - adc_buffer.rlB);
-  curL_DC   = (int16_t)(offsetdcl - adc_buffer.dcl);
+  curL_DC   = (int16_t)(offset[0][0][0] - adc_buffer.dcl);
+  curL_phaA = (int16_t)(offset[0][0][1] - adc_buffer.rlA) / 6 * 5;
+  curL_phaB = (int16_t)(offset[0][0][2] - adc_buffer.rlB);
   
   // Get Right motor currents
-  curR_phaB = (int16_t)(offsetrrB - adc_buffer.rrB);
-  curR_phaC = (int16_t)(offsetrrC - adc_buffer.rrC);
-  curR_DC   = (int16_t)(offsetdcr - adc_buffer.dcr);
+  curR_DC   = (int16_t)(offset[1][0][0] - adc_buffer.dcr);
+  curR_phaB = (int16_t)(offset[1][0][2] - adc_buffer.rrB);
+  curR_phaC = (int16_t)(offset[1][0][3] - adc_buffer.rrC);
+  
 
   // Disable PWM when current limit is reached (current chopping)
   // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
@@ -124,11 +122,15 @@ void DMA1_Channel1_IRQHandler(void) {
     LEFT_TIM->BDTR |= TIM_BDTR_MOE;
   }
 
+   
   if(ABS(curR_DC)  > curDC_max || enable == 0) {
     RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
   } else {
+    #ifdef MOTOR_RIGHT_ENA
     RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
+    #endif
   }
+  
 
   // Create square wave for buzzer
   buzzerTimer++;
@@ -155,9 +157,10 @@ void DMA1_Channel1_IRQHandler(void) {
   }
 
   // ############################### MOTOR CONTROL ###############################
+  
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_3);
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
 
-  int ul, vl, wl;
-  int ur, vr, wr;
   static boolean_T OverrunFlag = false;
 
   /* Check for overrun */
@@ -169,6 +172,7 @@ void DMA1_Channel1_IRQHandler(void) {
   /* Make sure to stop BOTH motors in case of an error */
   enableFin = enable && !rtY_Left.z_errCode && !rtY_Right.z_errCode;
  
+  #ifdef MOTOR_LEFT_ENA
   // ========================= LEFT MOTOR ============================ 
     // Get hall sensors values
     uint8_t hall_ul = !(LEFT_HALL_U_PORT->IDR & LEFT_HALL_U_PIN);
@@ -188,25 +192,28 @@ void DMA1_Channel1_IRQHandler(void) {
     // rtU_Left.a_mechAngle   = ...; // Angle input in DEGREES [0,360] in fixdt(1,16,4) data type. If `angle` is float use `= (int16_t)floor(angle * 16.0F)` If `angle` is integer use `= (int16_t)(angle << 4)`
     
     /* Step the controller */
-    #ifdef MOTOR_LEFT_ENA    
     BLDC_controller_step(rtM_Left);
-    #endif
 
     /* Get motor outputs here */
     ul            = rtY_Left.DC_phaA;
     vl            = rtY_Left.DC_phaB;
     wl            = rtY_Left.DC_phaC;
-  // errCodeLeft  = rtY_Left.z_errCode;
-  // motSpeedLeft = rtY_Left.n_mot;
-  // motAngleLeft = rtY_Left.a_elecAngle;
+    // errCodeLeft  = rtY_Left.z_errCode;
+    // motSpeedLeft = rtY_Left.n_mot;
+    // motAngleLeft = rtY_Left.a_elecAngle;
 
-    /* Apply commands */
-    LEFT_TIM->LEFT_TIM_U    = (uint16_t)CLAMP(ul + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    LEFT_TIM->LEFT_TIM_V    = (uint16_t)CLAMP(vl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    LEFT_TIM->LEFT_TIM_W    = (uint16_t)CLAMP(wl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    applyPWM(0,ul,vl,wl,1);
+    // LEFT_TIM->RIGHT_TIM_U  = (uint16_t)CLAMP(ul + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    // LEFT_TIM->RIGHT_TIM_V  = (uint16_t)CLAMP(vl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    // LEFT_TIM->RIGHT_TIM_W  = (uint16_t)CLAMP(wl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+
   // =================================================================
-  
+  #endif
 
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_3);
+  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
+
+  #ifdef MOTOR_RIGHT_ENA
   // ========================= RIGHT MOTOR ===========================  
     // Get hall sensors values
     uint8_t hall_ur = !(RIGHT_HALL_U_PORT->IDR & RIGHT_HALL_U_PIN);
@@ -226,23 +233,24 @@ void DMA1_Channel1_IRQHandler(void) {
     // rtU_Right.a_mechAngle   = ...; // Angle input in DEGREES [0,360] in fixdt(1,16,4) data type. If `angle` is float use `= (int16_t)floor(angle * 16.0F)` If `angle` is integer use `= (int16_t)(angle << 4)`
     
     /* Step the controller */
-    #ifdef MOTOR_RIGHT_ENA
     BLDC_controller_step(rtM_Right);
-    #endif
 
     /* Get motor outputs here */
     ur            = rtY_Right.DC_phaA;
     vr            = rtY_Right.DC_phaB;
     wr            = rtY_Right.DC_phaC;
- // errCodeRight  = rtY_Right.z_errCode;
- // motSpeedRight = rtY_Right.n_mot;
- // motAngleRight = rtY_Right.a_elecAngle;
+    // errCodeRight  = rtY_Right.z_errCode;
+    // motSpeedRight = rtY_Right.n_mot;
+    // motAngleRight = rtY_Right.a_elecAngle;
 
     /* Apply commands */
-    RIGHT_TIM->RIGHT_TIM_U  = (uint16_t)CLAMP(ur + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    RIGHT_TIM->RIGHT_TIM_V  = (uint16_t)CLAMP(vr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    RIGHT_TIM->RIGHT_TIM_W  = (uint16_t)CLAMP(wr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    applyPWM(1,ur,vr,wl,1);
+    // RIGHT_TIM->RIGHT_TIM_U  = (uint16_t)CLAMP(ur + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    // RIGHT_TIM->RIGHT_TIM_V  = (uint16_t)CLAMP(vr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    // RIGHT_TIM->RIGHT_TIM_W  = (uint16_t)CLAMP(wr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+  
   // =================================================================
+  #endif
 
   /* Indicate task complete */
   OverrunFlag = false;
@@ -250,3 +258,216 @@ void DMA1_Channel1_IRQHandler(void) {
  // ###############################################################################
 
 }
+
+void calibration(int8_T motor){
+  #define SAMPLES 1000   // Number of samples for each test
+  #define WAIT_HALL 1000 // Number of cycles to wait
+  #define PWM   150      // PWM value for tests
+  
+  #define DC_CHECK    // Each phase will be energized and DC current will be measured
+  #define PHASE_CHECK // Each phase will be energized and phase current will be measured
+  #define HALL_CHECK  // Each phase will be energized for a longer time and hall sensor will be measured
+  
+  switch (calibState[motor]){
+    case 0:
+      // TEST 0
+      // Turn PWM ON for all phased for current offset measurement
+      applyPWM(motor,0,0,0,1);
+      calibState[motor]=10;
+      test[motor] = 0;
+      break;
+    case 1:
+      // TEST 1
+      // Set PWM for phase U only
+      applyPWM(motor,PWM,0,0,0);
+      calibState[motor]=10;
+      test[motor] = 1;
+      break;
+    case 2:
+      //TEST 2
+      // Set PWM for phase V only
+      applyPWM(motor,0,PWM,0,0);
+      calibState[motor]=10;
+      test[motor] = 2;
+      break;
+    case 3:
+      //TEST 3
+      // Set PWM for phase W only
+       applyPWM(motor,0,0,PWM,0);
+      calibState[motor]=10;
+      test[motor] = 3;
+      break;
+    case 4:
+      // Print results
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        printf("\r\n");
+        printf(motor==0 ? "Left " : "Right ");
+        printf("Motor\r\n");
+        printf("+-------+-----+-----+-----+-----+-----+-----+-----+-----+-----+----+\r\n");
+        printf("|-------|DCCUR|PHA-A|PHA-B|PHA-C|HALLA|HALLB|HALLC|DCCUR|PHASE|HALL|\r\n");
+        printf("+-------+-----+-----+-----+-----+-----+-----+-----+-----+-----+----+\r\n");
+
+        int i,j;
+        #if defined(PHASE_CHECK) || defined(HALL_CHECK)
+        for(i=0;i<4;i++){
+        #else
+        for(i=0;i<1;i++){
+        #endif
+          switch (i){
+            case 0:
+              printf("|Offsets");
+              break;
+            case 1:
+              printf("|Phase A");
+              break;
+            case 2:
+              printf("|Phase B");
+              break;
+            case 3:
+              printf("|Phase C");
+              break;
+          } 
+          for(j=0;j<7;j++){
+            printf("|%05i",offset[motor][i][j]);
+          }
+          // Check phase current value
+          if (i>0){ // First test is for offsets
+            #if defined(DC_CHECK)
+            printf(offset[motor][i][0] < 0 ? "|___OK" : "|__NOK"); // Is DC current high enough
+            #else
+            printf("|_____");
+            #endif
+
+            #if defined(PHASE_CHECK)
+            // Check only valid phases for each motor
+            if (!(motor == 0 && i ==3)  && !(motor == 1 && i ==1)){
+              printf(offset[motor][i][i] > 5 ? "|___OK" : "|__NOK"); // Is Phase current high enough
+            }else{
+              printf("|_____");
+            }
+            #else
+              printf("|_____");
+            #endif
+
+            #if defined(HALL_CHECK)
+            uint8_t hallpos = (uint8_t)((offset[motor][i][4]<<2) + (offset[motor][i][5]<<1) + offset[motor][i][6]);
+            uint8_t hallmap[4] = {0,6,3,5}; // Expected positions
+            printf(hallpos == hallmap[i] ? "|__OK" : "|_NOK"); // Is position the expected one
+            #else
+            printf("|____"); // Is position the expected one
+            #endif
+          }else{
+            printf("|_____|_____|____");
+          }
+          printf("|\r\n+-------+-----+-----+-----+-----+-----+-----+-----+-----+-----+----+\r\n");
+        }
+        printf("\r\n");
+      #endif
+      calibState[motor]++;
+      break;
+    case 5:
+      // No more tests
+      return;
+      break;
+    case 10:
+      // Initialize counter
+      offsetcount[motor] = 0;
+      #ifdef HALL_CHECK
+      calibState[motor]++;
+      #else
+      calibState[motor]+=2; // Skip next state if hal check is not needed
+      #endif
+      break;
+    case 11:
+      // Give enough time for the wheel to spin, only necessary for HALL_CHECK
+      if (offsetcount[motor] == WAIT_HALL) calibState[motor]++;
+      offsetcount[motor]++;
+      break;  
+    case 12:
+      // Initialize variables
+      offsetcount[motor] = 0;
+      offset[motor][test[motor]][0] = 0;
+      offset[motor][test[motor]][1] = 0;
+      offset[motor][test[motor]][2] = 0;
+      offset[motor][test[motor]][3] = 0;
+
+      #if defined(HALL_CHECK)
+      if (test[motor]>0){
+        // Record all sensor state
+        offset[motor][test[motor]][4] = motor==0 ? !(LEFT_HALL_U_PORT->IDR & LEFT_HALL_U_PIN) : !(RIGHT_HALL_U_PORT->IDR & RIGHT_HALL_U_PIN);
+        offset[motor][test[motor]][5] = motor==0 ? !(LEFT_HALL_V_PORT->IDR & LEFT_HALL_V_PIN) : !(RIGHT_HALL_V_PORT->IDR & RIGHT_HALL_V_PIN);
+        offset[motor][test[motor]][6] = motor==0 ? !(LEFT_HALL_W_PORT->IDR & LEFT_HALL_W_PIN) : !(RIGHT_HALL_W_PORT->IDR & RIGHT_HALL_W_PIN);
+      }
+      #endif
+
+      calibState[motor]++;
+      break;
+    case 13:
+      // Sum of ADC values
+      offset[motor][test[motor]][0] += motor == 0 ? adc_buffer.dcl : adc_buffer.dcr;
+      offset[motor][test[motor]][1] += motor == 0 ? adc_buffer.rlA : 0;
+      offset[motor][test[motor]][2] += motor == 0 ? adc_buffer.rlB : adc_buffer.rrB;
+      offset[motor][test[motor]][3] += motor == 0 ? 0              : adc_buffer.rrC;
+      offsetcount[motor] ++;
+      if (offsetcount[motor] == SAMPLES) calibState[motor]++;
+      break; 
+    case 14:
+      // Calculate average
+      offset[motor][test[motor]][0] /= SAMPLES;
+      offset[motor][test[motor]][1] /= SAMPLES;
+      offset[motor][test[motor]][2] /= SAMPLES;
+      offset[motor][test[motor]][3] /= SAMPLES;
+      if (test[motor]>0){
+         // Susbtract from offset if it's not the first test
+         offset[motor][test[motor]][0] = (int32_t) (offset[motor][0][0] - offset[motor][test[motor]][0]);
+         offset[motor][test[motor]][1] = (int32_t) (offset[motor][0][1] - offset[motor][test[motor]][1]);
+         offset[motor][test[motor]][2] = (int32_t) (offset[motor][0][2] - offset[motor][test[motor]][2]);
+         offset[motor][test[motor]][3] = (int32_t) (offset[motor][0][3] - offset[motor][test[motor]][3]);
+      }
+
+      test[motor]++;
+      #if defined(DC_CHECK) || defined(PHASE_CHECK) || defined(HALL_CHECK)
+        calibState[motor] = test[motor];
+      #else
+        calibState[motor] = 4; // If Phase check is not needed, skip test 1-2-3
+      #endif
+      break;
+    default:
+       break;
+  }
+  
+}
+
+
+void applyPWM(uint8_t motor,uint16_t u,uint16_t v,uint16_t w,uint8_t midclamp){
+  
+  #define DEADTIME_COMPENSATION 0
+  #define DEADTIME_DEADBAND 10
+
+  // Compensation deadtime by adding or substracting the deadtime depending on the sign if value is higher than deadband 
+  if (DEADTIME_COMPENSATION > 0){
+    u += (uint16_t)(ABS(u) > DEADTIME_DEADBAND ? SIGN(u) * DEADTIME_COMPENSATION : 0);
+    v += (uint16_t)(ABS(v) > DEADTIME_DEADBAND ? SIGN(v) * DEADTIME_COMPENSATION : 0);
+    w += (uint16_t)(ABS(w) > DEADTIME_DEADBAND ? SIGN(w) * DEADTIME_COMPENSATION : 0);
+  }
+
+  // Apply midpoint clamp
+  if (midclamp){
+    u = (uint16_t)CLAMP(u + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    v = (uint16_t)CLAMP(v + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+    w = (uint16_t)CLAMP(w + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
+  }
+
+  if (motor==0){
+     // motor 0 is left one
+     LEFT_TIM->LEFT_TIM_U  = u;
+     LEFT_TIM->LEFT_TIM_V  = v;
+     LEFT_TIM->LEFT_TIM_W  = w;
+  }else if(motor==1){
+     // motor 1 is right one
+     RIGHT_TIM->RIGHT_TIM_U  = u;
+     RIGHT_TIM->RIGHT_TIM_V  = v;
+     RIGHT_TIM->RIGHT_TIM_W  = w;
+  }
+}
+
