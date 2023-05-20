@@ -30,6 +30,7 @@
 #include "BLDC_controller.h"      /* BLDC's header file */
 #include "rtwtypes.h"
 #include "comms.h"
+#include "bldc.h"
 #include "SEGGER_RTT.h"
 
 #if defined(DEBUG_I2C_LCD) || defined(SUPPORT_LCD)
@@ -45,6 +46,7 @@ extern TIM_HandleTypeDef htim_left;
 extern TIM_HandleTypeDef htim_right;
 extern ADC_HandleTypeDef hadc1;
 extern ADC_HandleTypeDef hadc2;
+extern ADC_HandleTypeDef hadc3;
 extern volatile adc_buf_t adc_buffer;
 #if defined(DEBUG_I2C_LCD) || defined(SUPPORT_LCD)
   extern LCD_PCF8574_HandleTypeDef lcd;
@@ -112,6 +114,7 @@ uint8_t backwardDrive;
 extern volatile uint32_t buzzerTimer;
 volatile uint32_t main_loop_counter;
 int16_t batVoltageCalib;         // global variable for calibrated battery voltage
+int16_t batVoltage;              // global variable for battery voltage
 int16_t board_temp_deg_c;        // global variable for calibrated temperature in degrees Celsius
 int16_t left_dc_curr;            // global variable for Left DC Link current 
 int16_t right_dc_curr;           // global variable for Right DC Link current
@@ -175,11 +178,11 @@ static uint16_t rate = RATE; // Adjustable rate to support multiple drive modes 
   static uint16_t max_speed;
 #endif
 
-
 int main(void) {
 
   HAL_Init();
   __HAL_RCC_AFIO_CLK_ENABLE();
+  
   HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
   /* System interrupt init*/
   /* MemoryManagement_IRQn interrupt configuration */
@@ -198,30 +201,36 @@ int main(void) {
   HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 
   SystemClock_Config();
-
   __HAL_RCC_DMA1_CLK_DISABLE();
-  MX_GPIO_Init();
-  MX_TIM_Init();
+  
+  BLDC_Init();        // BLDC Controller Init. 
   MX_ADC1_Init();
   MX_ADC2_Init();
-  BLDC_Init();        // BLDC Controller Init
+  MX_ADC3_Init();
+
+  MX_TIM8_Init();
+  MX_TIM1_Init();  
+  MX_GPIO_Init();
+  
   #if defined(DEBUG_SEGGER_RTT)
-     SEGGER_RTT_Init();
+    SEGGER_RTT_Init();
   #endif
 
-
   HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_SET);   // Activate Latch
+
   Input_Lim_Init();   // Input Limitations Init
   Input_Init();       // Input Init
 
   HAL_ADC_Start(&hadc1);
   HAL_ADC_Start(&hadc2);
+  HAL_ADC_Start(&hadc3);
 
   poweronMelody();
   HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
   
   int32_t board_temp_adcFixdt = adc_buffer.temp << 16;  // Fixed-point filter output initialized with current ADC converted to fixed-point
   int16_t board_temp_adcFilt  = adc_buffer.temp;
+  int32_t batVoltageFixdt     = adc_buffer.batt1 << 16;  // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
 
   #ifdef MULTI_MODE_DRIVE
     if (adc_buffer.l_tx2 > input1[0].min + 50 && adc_buffer.l_rx2 > input2[0].min + 50) {
@@ -248,12 +257,14 @@ int main(void) {
   #endif
 
   // Loop until button is released
-  while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
+  while(onoffpressed()) { HAL_Delay(10); }
 
   #ifdef MULTI_MODE_DRIVE
     // Wait until triggers are released
     while((adc_buffer.l_rx2 + adc_buffer.l_tx2) >= (input1[0].min + input2[0].min)) { HAL_Delay(10); }
   #endif
+
+  HAL_Delay(2000);
 
   while(1) {
     if (buzzerTimer - buzzerTimer_prev > 16*DELAY_IN_MAIN_LOOP) {   // 1 ms = 16 ticks buzzerTimer
@@ -265,13 +276,8 @@ int main(void) {
       // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
       if (enable == 0 && !rtY_Left.z_errCode && !rtY_Right.z_errCode && 
           ABS(input1[inIdx].cmd) < 50 && ABS(input2[inIdx].cmd) < 50){
-        //beepShort(6);                     // make 2 beeps indicating the motor enable
-        //beepShort(4); HAL_Delay(100);
-        //steerFixdt = speedFixdt = 0;      // reset filters
-        // enable = 1;                       // enable motors
-        //#if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
-        //printf("-- Motors enabled --\r\n");
-        //#endif
+        steerFixdt = speedFixdt = 0;      // reset filters
+        enableMotors(0);
       }
 
       // ####### VARIANT_HOVERCAR #######
@@ -487,10 +493,12 @@ int main(void) {
     board_temp_deg_c    = (TEMP_CAL_HIGH_DEG_C - TEMP_CAL_LOW_DEG_C) * (board_temp_adcFilt - TEMP_CAL_LOW_ADC) / (TEMP_CAL_HIGH_ADC - TEMP_CAL_LOW_ADC) + TEMP_CAL_LOW_DEG_C;
 
     // ####### CALC CALIBRATED BATTERY VOLTAGE #######
+    filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
+    batVoltage = (int16_t)(batVoltageFixdt >> 16);  // convert fixed-point to integer
     batVoltageCalib = batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC;
 
     // ####### CALC DC LINK CURRENT #######
-    left_dc_curr  = -(rtU_Left.i_DCLink * 100) / A2BIT_CONV;   // Left DC Link Current * 100 
+    left_dc_curr  = -(rtU_Left.i_DCLink  * 100) / A2BIT_CONV;   // Left DC Link Current * 100 
     right_dc_curr = -(rtU_Right.i_DCLink * 100) / A2BIT_CONV;  // Right DC Link Current * 100
     dc_curr       = left_dc_curr + right_dc_curr;            // Total DC Link Current * 100
 
@@ -500,6 +508,7 @@ int main(void) {
         #if defined(DEBUG_SERIAL_PROTOCOL)
           process_debug();
         #else
+          /*
           printf("in1:%i in2:%i cmdL:%i cmdR:%i BatADC:%i BatV:%i TempADC:%i Temp:%i \r\n",
             input1[inIdx].raw,        // 1: INPUT1
             input2[inIdx].raw,        // 2: INPUT2
@@ -509,6 +518,7 @@ int main(void) {
             batVoltageCalib,          // 6: for verifying battery voltage calibration
             board_temp_adcFilt,       // 7: for board temperature calibration
             board_temp_deg_c);        // 8: for verifying board temperature calibration
+          */
         #endif
       }
     #endif
@@ -551,29 +561,49 @@ int main(void) {
     // ####### BEEP AND EMERGENCY POWEROFF #######
     if (TEMP_POWEROFF_ENABLE && board_temp_deg_c >= TEMP_POWEROFF && speedAvgAbs < 20){  // poweroff before mainboard burns OR low bat 3
       #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
-        printf("Powering off, temperature is too high\r\n");
+        printf("Powering off, temperature (%i°c) is higher than %i°c\r\n",board_temp_deg_c,TEMP_POWEROFF);
       #endif
       poweroff();
     } else if ( BAT_DEAD_ENABLE && batVoltage < BAT_DEAD && speedAvgAbs < 20){
       #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
-        printf("Powering off, battery voltage is too low\r\n");
+        printf("Powering off, battery voltage (%iV) is lower than %iV\r\n",batVoltageCalib,BAT_DEAD * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC);
       #endif
       poweroff();
     } else if (rtY_Left.z_errCode || rtY_Right.z_errCode) {                                           // 1 beep (low pitch): Motor error, disable motors
       enable = 0;
       beepCount(1, 24, 1);
+      if (main_loop_counter % 100 == 0 && rtY_Left.z_errCode) printf("Warning, motor left error code %i\r\n",rtY_Left.z_errCode);
+      if (main_loop_counter % 100 == 0 && rtY_Right.z_errCode) printf("Warning, motor right error code %i\r\n",rtY_Right.z_errCode);
     } else if (timeoutFlgADC) {                                                                       // 2 beeps (low pitch): ADC timeout
       beepCount(2, 24, 1);
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+      if (main_loop_counter % 100 == 0) printf("Warning, ADC Timeout\r\n");
+      #endif
     } else if (timeoutFlgSerial) {                                                                    // 3 beeps (low pitch): Serial timeout
       beepCount(3, 24, 1);
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+      if (main_loop_counter % 100 == 0) printf("Warning, Serial Timeout\r\n");
+      #endif
     } else if (timeoutFlgGen) {                                                                       // 4 beeps (low pitch): General timeout (PPM, PWM, Nunchuk)
       beepCount(4, 24, 1);
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+      if (main_loop_counter % 100 == 0) printf("Warning, General Timeout\r\n");
+      #endif
     } else if (TEMP_WARNING_ENABLE && board_temp_deg_c >= TEMP_WARNING) {                             // 5 beeps (low pitch): Mainboard temperature warning
       beepCount(5, 24, 1);
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+      if (main_loop_counter % 100 == 0) printf("Warning, temperature (%i°c) is higher than %i°c\r\n",board_temp_deg_c,TEMP_WARNING);
+      #endif
     } else if (BAT_LVL1_ENABLE && batVoltage < BAT_LVL1) {                                            // 1 beep fast (medium pitch): Low bat 1
       beepCount(0, 10, 6);
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+      if (main_loop_counter % 100 == 0) printf("Warning, battery voltage (%iV) is lower then %iV\r\n",batVoltageCalib,BAT_LVL1 * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC);
+      #endif
     } else if (BAT_LVL2_ENABLE && batVoltage < BAT_LVL2) {                                            // 1 beep slow (medium pitch): Low bat 2
       beepCount(0, 10, 30);
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+      if (main_loop_counter % 100 == 0) printf("Warning, battery voltage (%iV) is lower then %iV\r\n",batVoltageCalib,BAT_LVL2 * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC);
+      #endif
     } else if (BEEPS_BACKWARD && (((cmdR < -50 || cmdL < -50) && speedAvg < 0) || MultipleTapBrake.b_multipleTap)) { // 1 beep fast (high pitch): Backward spinning motors
       beepCount(0, 5, 1);
       backwardDrive = 1;
@@ -600,7 +630,7 @@ int main(void) {
     #if INACTIVITY_TIMEOUT > 0
       if (inactivity_timeout_counter > (INACTIVITY_TIMEOUT * 60 * 1000) / (DELAY_IN_MAIN_LOOP + 1)) {  // rest of main loop needs maybe 1ms
         #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
-          printf("Powering off, wheels were inactive for too long\r\n");
+          printf("Powering off, wheels were inactive for more than %imin\r\n",INACTIVITY_TIMEOUT);
         #endif
         poweroff();
       }

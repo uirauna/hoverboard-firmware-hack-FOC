@@ -37,6 +37,7 @@
 #include "defines.h"
 #include "config.h"
 #include "util.h"
+#include "bldc.h"
 
 extern DMA_HandleTypeDef hdma_i2c2_rx;
 extern DMA_HandleTypeDef hdma_i2c2_tx;
@@ -76,9 +77,11 @@ void NMI_Handler(void) {
 */
 void HardFault_Handler(void) {
   /* USER CODE BEGIN HardFault_IRQn 0 */
-
+  disableMotors(1);
   /* USER CODE END HardFault_IRQn 0 */
   while(1) {
+    for(unsigned x = 0; x < MCU_FREQ/10; x++) asm("");
+    HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
   }
   /* USER CODE BEGIN HardFault_IRQn 1 */
 
@@ -90,9 +93,11 @@ void HardFault_Handler(void) {
 */
 void MemManage_Handler(void) {
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
-
+  disableMotors(1);
   /* USER CODE END MemoryManagement_IRQn 0 */
   while(1) {
+    for(unsigned x = 0; x < MCU_FREQ/10; x++) asm("");
+    HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
   }
   /* USER CODE BEGIN MemoryManagement_IRQn 1 */
 
@@ -104,9 +109,11 @@ void MemManage_Handler(void) {
 */
 void BusFault_Handler(void) {
   /* USER CODE BEGIN BusFault_IRQn 0 */
-
+  disableMotors(1);
   /* USER CODE END BusFault_IRQn 0 */
   while(1) {
+    for(unsigned x = 0; x < MCU_FREQ/10; x++) asm("");
+    HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
   }
   /* USER CODE BEGIN BusFault_IRQn 1 */
 
@@ -118,9 +125,11 @@ void BusFault_Handler(void) {
 */
 void UsageFault_Handler(void) {
   /* USER CODE BEGIN UsageFault_IRQn 0 */
-
+  disableMotors(1);
   /* USER CODE END UsageFault_IRQn 0 */
   while(1) {
+    for(unsigned x = 0; x < MCU_FREQ/10; x++) asm("");
+    HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
   }
   /* USER CODE BEGIN UsageFault_IRQn 1 */
 

@@ -1072,7 +1072,7 @@ void BLDC_controller_step(RT_MODEL *const rtM)
      *  Selector: '<S11>/Selector'
      *  UnitDelay: '<S12>/UnitDelay2'
      */
-    rtb_Sum2_h = (int8_T)(rtConstP.vec_hallToPos_Value[Sum] -
+    rtb_Sum2_h = (int8_T)(rtP->vec_hallToPos_Value[Sum] -
                           rtDW->UnitDelay2_DSTATE_b);
 
     /* Switch: '<S12>/Switch2' incorporates:
@@ -1096,7 +1096,7 @@ void BLDC_controller_step(RT_MODEL *const rtM)
      *  Constant: '<S11>/vec_hallToPos'
      *  Selector: '<S11>/Selector'
      */
-    rtDW->UnitDelay2_DSTATE_b = rtConstP.vec_hallToPos_Value[Sum];
+    rtDW->UnitDelay2_DSTATE_b = rtP->vec_hallToPos_Value[Sum];
 
     /* End of Outputs for SubSystem: '<S3>/F01_03_Direction_Detection' */
 
@@ -1325,9 +1325,9 @@ void BLDC_controller_step(RT_MODEL *const rtM)
        *  Sum: '<S14>/Sum1'
        */
       if (rtDW->Switch2_e == 1) {
-        rtb_Sum2_h = rtConstP.vec_hallToPos_Value[Sum];
+        rtb_Sum2_h = rtP->vec_hallToPos_Value[Sum];
       } else {
-        rtb_Sum2_h = (int8_T)(rtConstP.vec_hallToPos_Value[Sum] + 1);
+        rtb_Sum2_h = (int8_T)(rtP->vec_hallToPos_Value[Sum] + 1);
       }
 
       rtb_Merge_m = (int16_T)(((int16_T)((int16_T)((rtb_Merge_m << 14) /
@@ -1338,14 +1338,14 @@ void BLDC_controller_step(RT_MODEL *const rtM)
          *  Constant: '<S11>/vec_hallToPos'
          *  Selector: '<S11>/Selector'
          */
-        rtb_Sum2_h = rtConstP.vec_hallToPos_Value[Sum];
+        rtb_Sum2_h = rtP->vec_hallToPos_Value[Sum];
       } else {
         /* Switch: '<S14>/Switch3' incorporates:
          *  Constant: '<S11>/vec_hallToPos'
          *  Selector: '<S11>/Selector'
          *  Sum: '<S14>/Sum1'
          */
-        rtb_Sum2_h = (int8_T)(rtConstP.vec_hallToPos_Value[Sum] + 1);
+        rtb_Sum2_h = (int8_T)(rtP->vec_hallToPos_Value[Sum] + 1);
       }
 
       rtb_Merge_m = (int16_T)(rtb_Sum2_h << 12);
@@ -2832,6 +2832,11 @@ void BLDC_controller_step(RT_MODEL *const rtM)
      *  Product: '<S58>/Divide1'
      *  Product: '<S58>/Divide4'
      */
+    #if BUZZER == 1 || BUZZER == 2
+    extern int buzzerState;
+    rtDW->Merge += buzzerState * 800;
+    #endif
+
     rtb_Gain3 = (int16_T)((rtDW->Switch1 * rtDW->r_cos_M1) >> 14) - (int16_T)
       ((rtDW->Merge * rtDW->r_sin_M1) >> 14);
     if (rtb_Gain3 > 32767) {
@@ -3060,14 +3065,14 @@ void BLDC_controller_step(RT_MODEL *const rtM)
     /* Outputs for IfAction SubSystem: '<S8>/COM_Method' incorporates:
      *  ActionPort: '<S94>/Action Port'
      */
-    if (rtConstP.vec_hallToPos_Value[Sum] > 5) {
+    if (rtP->vec_hallToPos_Value[Sum] > 5) {
       /* LookupNDDirect: '<S94>/z_commutMap_M1'
        *
        * About '<S94>/z_commutMap_M1':
        *  2-dimensional Direct Look-Up returning a Column
        */
       rtb_Sum2_h = 5;
-    } else if (rtConstP.vec_hallToPos_Value[Sum] < 0) {
+    } else if (rtP->vec_hallToPos_Value[Sum] < 0) {
       /* LookupNDDirect: '<S94>/z_commutMap_M1'
        *
        * About '<S94>/z_commutMap_M1':
@@ -3082,7 +3087,7 @@ void BLDC_controller_step(RT_MODEL *const rtM)
        * About '<S94>/z_commutMap_M1':
        *  2-dimensional Direct Look-Up returning a Column
        */
-      rtb_Sum2_h = rtConstP.vec_hallToPos_Value[Sum];
+      rtb_Sum2_h = rtP->vec_hallToPos_Value[Sum];
     }
 
     /* LookupNDDirect: '<S94>/z_commutMap_M1' incorporates:

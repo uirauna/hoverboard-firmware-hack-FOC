@@ -376,7 +376,14 @@ P rtP_Left = {
    *   '<S6>/b_fieldWeakEna'
    *   '<S97>/b_fieldWeakEna'
    */
-  0
+  0,
+
+  /* Variable: vec_hallToPos_Value
+   */
+  { 0, 2, 0, 1, 4, 3, 5, 0 },
+  /* Variable: vec_hallToAngle_Value
+   */
+  { 0, 120, 0, 60, 240, 180, 300, 0 }
 };                                     /* Modifiable parameters */
 
 /*

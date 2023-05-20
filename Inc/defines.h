@@ -26,20 +26,58 @@
 #include "stm32f1xx_hal.h"
 #include "config.h"
 
-#define LEFT_HALL_U_PIN GPIO_PIN_5
-#define LEFT_HALL_V_PIN GPIO_PIN_6
-#define LEFT_HALL_W_PIN GPIO_PIN_7
 
+// ############################### DO-NOT-TOUCH SETTINGS ###############################
+#define MCU_FREQ         64000000     // MCU frequency
+#define PWM_FREQ            16000     // PWM frequency in Hz / is also used for buzzer
+#define PWM_PER MCU_FREQ/2/PWM_FREQ   // PWM Period
+#define DEAD_TIME              48     // PWM deadtime
+#ifdef VARIANT_TRANSPOTTER
+  #define DELAY_IN_MAIN_LOOP    2
+#else
+  #define DELAY_IN_MAIN_LOOP    5     // in ms. default 5. it is independent of all the timing critical stuff. do not touch if you do not know what you are doing.
+#endif
+#define TIMEOUT                20     // number of wrong / missing input commands before emergency off
+#define DC_SHUNT               0.0035 // Resistance of DC shunt in ohms, 0.0035 for 2 R007 shunts 
+#define OPAMP_FACTOR           11 
+#define A2BIT_CONV             DC_SHUNT * OPAMP_FACTOR * 4095 / 3.3 // A to bit for current conversion on ADC. Example: 1 A = 50, 2 A = 100, etc
+// #define PRINTF_FLOAT_SUPPORT          // [-] Uncomment this for printf to support float on Serial Debug. It will increase code size! Better to avoid it!
+
+// ADC conversion time definitions
+#define ADC_CONV_TIME_1C5       (14)  //Total ADC clock cycles / conversion = (  1.5+12.5)
+#define ADC_CONV_TIME_7C5       (20)  //Total ADC clock cycles / conversion = (  7.5+12.5)
+#define ADC_CONV_TIME_13C5      (26)  //Total ADC clock cycles / conversion = ( 13.5+12.5)
+#define ADC_CONV_TIME_28C5      (41)  //Total ADC clock cycles / conversion = ( 28.5+12.5)
+#define ADC_CONV_TIME_41C5      (54)  //Total ADC clock cycles / conversion = ( 41.5+12.5)
+#define ADC_CONV_TIME_55C5      (68)  //Total ADC clock cycles / conversion = ( 55.5+12.5)
+#define ADC_CONV_TIME_71C5      (84)  //Total ADC clock cycles / conversion = ( 71.5+12.5)
+#define ADC_CONV_TIME_239C5     (252) //Total ADC clock cycles / conversion = (239.5+12.5)
+
+// This settings influences the actual sample-time. Only use definitions above
+// This parameter needs to be the same as the ADC conversion for Current Phase of the FIRST Motor in setup.c
+#define ADC_CONV_CLOCK_CYCLES   (ADC_CONV_TIME_1C5)
+
+// Set the configured ADC divider. This parameter needs to be the same ADC divider as PeriphClkInit.AdcClockSelection (see main.c)
+#define ADC_CLOCK_DIV           (4)
+
+// ADC Total conversion time: this will be used to offset TIM8 in advance of TIM1 to align the Phase current ADC measurement
+// This parameter is used in setup.c
+#define ADC_TOTAL_CONV_TIME     (ADC_CLOCK_DIV * ADC_CONV_CLOCK_CYCLES) // = ((SystemCoreClock / ADC_CLOCK_HZ) * ADC_CONV_CLOCK_CYCLES), where ADC_CLOCK_HZ = SystemCoreClock/ADC_CLOCK_DIV
+// ########################### END OF  DO-NOT-TOUCH SETTINGS ############################
+
+
+#define LEFT_HALL_U_PIN GPIO_PIN_5
 #define LEFT_HALL_U_PORT GPIOB
+#define LEFT_HALL_V_PIN GPIO_PIN_6
 #define LEFT_HALL_V_PORT GPIOB
+#define LEFT_HALL_W_PIN GPIO_PIN_7
 #define LEFT_HALL_W_PORT GPIOB
 
 #define RIGHT_HALL_U_PIN GPIO_PIN_10
-#define RIGHT_HALL_V_PIN GPIO_PIN_11
-#define RIGHT_HALL_W_PIN GPIO_PIN_12
-
 #define RIGHT_HALL_U_PORT GPIOC
+#define RIGHT_HALL_V_PIN GPIO_PIN_11
 #define RIGHT_HALL_V_PORT GPIOC
+#define RIGHT_HALL_W_PIN GPIO_PIN_12
 #define RIGHT_HALL_W_PORT GPIOC
 
 #define LEFT_TIM TIM8
@@ -76,39 +114,39 @@
 #define RIGHT_TIM_WL_PIN GPIO_PIN_15
 #define RIGHT_TIM_WL_PORT GPIOB
 
-// #define LEFT_DC_CUR_ADC ADC1
-// #define LEFT_U_CUR_ADC ADC1
-// #define LEFT_V_CUR_ADC ADC1
 
 #define LEFT_DC_CUR_PIN GPIO_PIN_0
-#define LEFT_U_CUR_PIN GPIO_PIN_0
-#define LEFT_V_CUR_PIN GPIO_PIN_3
-
 #define LEFT_DC_CUR_PORT GPIOC
-#define LEFT_U_CUR_PORT GPIOA
-#define LEFT_V_CUR_PORT GPIOC
+#define ADC_CHANNEL_LEFT_DC ADC_CHANNEL_10
 
-// #define RIGHT_DC_CUR_ADC ADC2
-// #define RIGHT_U_CUR_ADC ADC2
-// #define RIGHT_V_CUR_ADC ADC2
+#define LEFT_U_CUR_PIN GPIO_PIN_0
+#define LEFT_U_CUR_PORT GPIOA
+#define ADC_CHANNEL_LEFT_U ADC_CHANNEL_0
+
+#define LEFT_V_CUR_PIN GPIO_PIN_3
+#define LEFT_V_CUR_PORT GPIOC
+#define ADC_CHANNEL_LEFT_V ADC_CHANNEL_13
 
 #define RIGHT_DC_CUR_PIN GPIO_PIN_1
-#define RIGHT_U_CUR_PIN GPIO_PIN_4
-#define RIGHT_V_CUR_PIN GPIO_PIN_5
-
 #define RIGHT_DC_CUR_PORT GPIOC
+#define ADC_CHANNEL_RIGHT_DC ADC_CHANNEL_11
+
+#define RIGHT_U_CUR_PIN GPIO_PIN_4
 #define RIGHT_U_CUR_PORT GPIOC
+#define ADC_CHANNEL_RIGHT_U ADC_CHANNEL_14
+
+#define RIGHT_V_CUR_PIN GPIO_PIN_5
 #define RIGHT_V_CUR_PORT GPIOC
+#define ADC_CHANNEL_RIGHT_V ADC_CHANNEL_15
 
-// #define DCLINK_ADC ADC3
-// #define DCLINK_CHANNEL
-
-#if BOARD_VARIANT == 0
-#define DCLINK_PIN GPIO_PIN_2
-#define DCLINK_PORT GPIOC
-#elif BOARD_VARIANT == 1
-#define DCLINK_PIN GPIO_PIN_1
-#define DCLINK_PORT GPIOA
+#if BOARD_VARIANT == 1
+  #define VBAT GPIO_PIN_1
+  #define VBAT_PORT GPIOA
+  #define ADC_CHANNEL_VBAT ADC_CHANNEL_1
+#else
+  #define VBAT_PIN GPIO_PIN_2
+  #define VBAT_PORT GPIOC
+  #define ADC_CHANNEL_VBAT ADC_CHANNEL_12
 #endif
 
 // #define DCLINK_PULLUP 30000
@@ -117,72 +155,69 @@
 #define LED_PIN GPIO_PIN_2
 #define LED_PORT GPIOB
 
-#if BOARD_VARIANT == 0
-#define BUZZER_PIN GPIO_PIN_4
-#define BUZZER_PORT GPIOA
-#elif BOARD_VARIANT == 1
-#define BUZZER_PIN GPIO_PIN_13
-#define BUZZER_PORT GPIOC
+#if BOARD_VARIANT == 1
+  #define BUZZER_PIN GPIO_PIN_13
+  #define BUZZER_PORT GPIOC
+#else
+  #define BUZZER_PIN GPIO_PIN_4
+  #define BUZZER_PORT GPIOA
 #endif
 
-// UNUSED/REDUNDANT
-//#define SWITCH_PIN GPIO_PIN_1
-//#define SWITCH_PORT GPIOA
-
-#if BOARD_VARIANT == 0
-#define OFF_PIN GPIO_PIN_5
-#define OFF_PORT GPIOA
-#elif BOARD_VARIANT == 1
-#define OFF_PIN GPIO_PIN_15
-#define OFF_PORT GPIOC
+#if BOARD_VARIANT == 1
+  #define OFF_PIN GPIO_PIN_15
+  #define OFF_PORT GPIOC
+#else
+  #define OFF_PIN GPIO_PIN_5
+  #define OFF_PORT GPIOA
 #endif
 
-#if BOARD_VARIANT == 0
-#define BUTTON_PIN GPIO_PIN_1
-#define BUTTON_PORT GPIOA
-#elif BOARD_VARIANT == 1
-#define BUTTON_PIN GPIO_PIN_9
-#define BUTTON_PORT GPIOB
+#if BOARD_VARIANT == 1
+  #define BUTTON_PIN GPIO_PIN_9
+  #define BUTTON_PORT GPIOB
+#else
+  #define BUTTON_PIN GPIO_PIN_1
+  #define BUTTON_PORT GPIOA
 #endif
+#define ADC_CHANNEL_BUTTON ADC_CHANNEL_1
 
-#if BOARD_VARIANT == 0
-#define CHARGER_PIN GPIO_PIN_12
-#define CHARGER_PORT GPIOA
-#elif BOARD_VARIANT == 1
-#define CHARGER_PIN GPIO_PIN_11
-#define CHARGER_PORT GPIOA
+#if BOARD_VARIANT == 1
+  #define CHARGER_PIN GPIO_PIN_11
+  #define CHARGER_PORT GPIOA
+#else
+  #define CHARGER_PIN GPIO_PIN_12
+  #define CHARGER_PORT GPIOA
 #endif
 
 #if defined(CONTROL_PPM_LEFT)
-#define PPM_PIN             GPIO_PIN_3
-#define PPM_PORT            GPIOA
+  #define PPM_PIN             GPIO_PIN_3
+  #define PPM_PORT            GPIOA
 #elif defined(CONTROL_PPM_RIGHT)
-#define PPM_PIN             GPIO_PIN_11
-#define PPM_PORT            GPIOB
+  #define PPM_PIN             GPIO_PIN_11
+  #define PPM_PORT            GPIOB
 #endif
 
 #if defined(CONTROL_PWM_LEFT)
-#define PWM_PIN_CH1         GPIO_PIN_2
-#define PWM_PORT_CH1        GPIOA
-#define PWM_PIN_CH2         GPIO_PIN_3
-#define PWM_PORT_CH2        GPIOA
+  #define PWM_PIN_CH1         GPIO_PIN_2
+  #define PWM_PORT_CH1        GPIOA
+  #define PWM_PIN_CH2         GPIO_PIN_3
+  #define PWM_PORT_CH2        GPIOA
 #elif defined(CONTROL_PWM_RIGHT)
-#define PWM_PIN_CH1         GPIO_PIN_10
-#define PWM_PORT_CH1        GPIOB
-#define PWM_PIN_CH2         GPIO_PIN_11
-#define PWM_PORT_CH2        GPIOB
+  #define PWM_PIN_CH1         GPIO_PIN_10
+  #define PWM_PORT_CH1        GPIOB
+  #define PWM_PIN_CH2         GPIO_PIN_11
+  #define PWM_PORT_CH2        GPIOB
 #endif
 
 #if defined(SUPPORT_BUTTONS_LEFT)
-#define BUTTON1_PIN         GPIO_PIN_2
-#define BUTTON1_PORT        GPIOA
-#define BUTTON2_PIN         GPIO_PIN_3
-#define BUTTON2_PORT        GPIOA
+  #define BUTTON1_PIN         GPIO_PIN_2
+  #define BUTTON1_PORT        GPIOA
+  #define BUTTON2_PIN         GPIO_PIN_3
+  #define BUTTON2_PORT        GPIOA
 #elif defined(SUPPORT_BUTTONS_RIGHT)
-#define BUTTON1_PIN         GPIO_PIN_10
-#define BUTTON1_PORT        GPIOB
-#define BUTTON2_PIN         GPIO_PIN_11
-#define BUTTON2_PORT        GPIOB
+  #define BUTTON1_PIN         GPIO_PIN_10
+  #define BUTTON1_PORT        GPIOB
+  #define BUTTON2_PIN         GPIO_PIN_11
+  #define BUTTON2_PORT        GPIOB
 #endif
 
 #define DELAY_TIM_FREQUENCY_US 1000000
@@ -217,16 +252,12 @@
 
 
 typedef struct {
-  uint16_t dcr; 
-  uint16_t dcl; 
-  uint16_t rlA;
-  uint16_t rlB;
-  uint16_t rrB;
-  uint16_t rrC;
   uint16_t batt1;
+  uint16_t onoff;
   uint16_t l_tx2;
-  uint16_t temp;
   uint16_t l_rx2;
+  uint16_t temp;
+  uint16_t vrefint;
 } adc_buf_t;
 
 typedef enum {

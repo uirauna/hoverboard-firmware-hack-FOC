@@ -111,6 +111,7 @@ void sideboardSensors(uint8_t sensors);
 // Poweroff Functions
 void saveConfig(void);
 void poweroff(void);
+int8_t onoffpressed(void);
 void poweroffPressCheck(void);
 
 // Filtering Functions

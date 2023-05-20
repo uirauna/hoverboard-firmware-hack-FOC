@@ -371,6 +371,8 @@ struct P_ {
                                         *   '<S6>/b_fieldWeakEna'
                                         *   '<S97>/b_fieldWeakEna'
                                         */
+  int8_T vec_hallToPos_Value[8];
+  int16_T vec_hallToAngle_Value[8];
 };
 
 /* Parameters (auto storage) */

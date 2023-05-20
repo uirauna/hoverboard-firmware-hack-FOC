@@ -38,11 +38,13 @@ pb10 usart3 dma1 channel2/3
 #include "defines.h"
 #include "config.h"
 #include "setup.h"
+#include "bldc.h"
 
 TIM_HandleTypeDef htim_right;
 TIM_HandleTypeDef htim_left;
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
+ADC_HandleTypeDef hadc3;
 I2C_HandleTypeDef hi2c2;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
@@ -62,10 +64,10 @@ volatile adc_buf_t adc_buffer;
   __HAL_RCC_DMA1_CLK_ENABLE();
   
   /* DMA1_Channel6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
   /* DMA1_Channel7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
   
   huart2.Instance = USART2;
@@ -89,10 +91,10 @@ void UART3_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
   /* DMA1_Channel3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
   
   huart3.Instance = USART3;
@@ -161,7 +163,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     __HAL_LINKDMA(uartHandle,hdmatx,hdma_usart2_tx);
 
     /* USART2 interrupt Init */
-    HAL_NVIC_SetPriority(USART2_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(USART2_IRQn, 3, 0);
     HAL_NVIC_EnableIRQ(USART2_IRQn);
   /* USER CODE BEGIN USART2_MspInit 1 */
 	__HAL_UART_ENABLE_IT (uartHandle, UART_IT_IDLE);  // Enable the USART IDLE line detection interrupt
@@ -216,7 +218,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     __HAL_LINKDMA(uartHandle,hdmatx,hdma_usart3_tx);
 
     /* USART3 interrupt Init */
-    HAL_NVIC_SetPriority(USART3_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(USART3_IRQn, 3, 0);
     HAL_NVIC_EnableIRQ(USART3_IRQn);
   /* USER CODE BEGIN USART3_MspInit 1 */
 	__HAL_UART_ENABLE_IT (uartHandle, UART_IT_IDLE);  // Enable the USART IDLE line detection interrupt
@@ -310,50 +312,6 @@ void I2C_Init(void)
   __HAL_RCC_I2C2_FORCE_RESET();
   __HAL_RCC_I2C2_RELEASE_RESET();
   HAL_I2C_Init(&hi2c2);
-
-  /* Peripheral DMA init*/
-/*  __HAL_RCC_DMA1_CLK_ENABLE();
-*/  
-  /* DMA1_Channel4_IRQn interrupt configuration */
-/*  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 1, 4);
-  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
-*/
-  /* DMA1_Channel5_IRQn interrupt configuration */
-/*  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 1, 3);
-  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
-*/
-
-/*  hdma_i2c2_rx.Instance = DMA1_Channel5;
-  hdma_i2c2_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
-  hdma_i2c2_rx.Init.PeriphInc = DMA_PINC_DISABLE;
-  hdma_i2c2_rx.Init.MemInc = DMA_MINC_ENABLE;
-  hdma_i2c2_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-  hdma_i2c2_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-  hdma_i2c2_rx.Init.Mode = DMA_NORMAL;
-  hdma_i2c2_rx.Init.Priority = DMA_PRIORITY_MEDIUM;
-  HAL_DMA_Init(&hdma_i2c2_rx);
-
-  __HAL_LINKDMA(&hi2c2,hdmarx,hdma_i2c2_rx);
-*/
-
-/*  hdma_i2c2_tx.Instance = DMA1_Channel4;
-  hdma_i2c2_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
-  hdma_i2c2_tx.Init.PeriphInc = DMA_PINC_DISABLE;
-  hdma_i2c2_tx.Init.MemInc = DMA_MINC_ENABLE;
-  hdma_i2c2_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-  hdma_i2c2_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-  hdma_i2c2_tx.Init.Mode = DMA_NORMAL;
-  hdma_i2c2_tx.Init.Priority = DMA_PRIORITY_MEDIUM;
-  HAL_DMA_Init(&hdma_i2c2_tx);
-
-  __HAL_LINKDMA(&hi2c2,hdmatx,hdma_i2c2_tx);
-*/
-  /* Peripheral interrupt init */
-/*  HAL_NVIC_SetPriority(I2C2_EV_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(I2C2_EV_IRQn);
-  HAL_NVIC_SetPriority(I2C2_ER_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(I2C2_ER_IRQn);
-*/
 }
 
 void MX_GPIO_Init(void) {
@@ -398,30 +356,25 @@ void MX_GPIO_Init(void) {
   #endif
   
 
+  #if BOARD_VARIANT == 0
+  GPIO_InitStruct.Pull = GPIO_MODE_ANALOG;
+  #else
   GPIO_InitStruct.Pull = GPIO_NOPULL;
+  #endif
 
   GPIO_InitStruct.Pin = BUTTON_PIN;
   HAL_GPIO_Init(BUTTON_PORT, &GPIO_InitStruct);
-
 
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 
   GPIO_InitStruct.Pin = LED_PIN;
   HAL_GPIO_Init(LED_PORT, &GPIO_InitStruct);
-
+  
   GPIO_InitStruct.Pin = BUZZER_PIN;
   HAL_GPIO_Init(BUZZER_PORT, &GPIO_InitStruct);
 
   GPIO_InitStruct.Pin = OFF_PIN;
   HAL_GPIO_Init(OFF_PORT, &GPIO_InitStruct);
-
-  //Analog in
-  #if !defined(SUPPORT_BUTTONS_LEFT)
-  GPIO_InitStruct.Pin = GPIO_PIN_3;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = GPIO_PIN_2;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-  #endif
 
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
 
@@ -443,11 +396,19 @@ void MX_GPIO_Init(void) {
   GPIO_InitStruct.Pin = RIGHT_V_CUR_PIN;
   HAL_GPIO_Init(RIGHT_V_CUR_PORT, &GPIO_InitStruct);
 
-  GPIO_InitStruct.Pin = DCLINK_PIN;
-  HAL_GPIO_Init(DCLINK_PORT, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = VBAT_PIN;
+  HAL_GPIO_Init(VBAT_PORT, &GPIO_InitStruct);
+  
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // Remove after tests
+  //Analog in
+  #if !defined(SUPPORT_BUTTONS_LEFT)
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = GPIO_PIN_2;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  #endif
 
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-
   GPIO_InitStruct.Pin = LEFT_TIM_UH_PIN;
   HAL_GPIO_Init(LEFT_TIM_UH_PORT, &GPIO_InitStruct);
 
@@ -483,54 +444,82 @@ void MX_GPIO_Init(void) {
 
   GPIO_InitStruct.Pin = RIGHT_TIM_WL_PIN;
   HAL_GPIO_Init(RIGHT_TIM_WL_PORT, &GPIO_InitStruct);
+
 }
 
-void MX_TIM_Init(void) {
-  __HAL_RCC_TIM1_CLK_ENABLE();
-  __HAL_RCC_TIM8_CLK_ENABLE();
+void MX_TIM1_Init(void) {
 
+  __HAL_RCC_TIM1_CLK_ENABLE();
+  // Stop this timer when core is halted during debug
+  SET_BIT(DBGMCU->CR,DBGMCU_CR_DBG_TIM1_STOP);
+  
   TIM_MasterConfigTypeDef sMasterConfig;
   TIM_OC_InitTypeDef sConfigOC;
   TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig;
-  TIM_SlaveConfigTypeDef sTimConfig;
-
+  
   htim_right.Instance               = RIGHT_TIM;
   htim_right.Init.Prescaler         = 0;
-  htim_right.Init.CounterMode       = TIM_COUNTERMODE_CENTERALIGNED1;
-  htim_right.Init.Period            = 64000000 / 2 / PWM_FREQ;
+  htim_right.Init.CounterMode       = TIM_COUNTERMODE_CENTERALIGNED3;
+  htim_right.Init.Period            = PWM_PER;
   htim_right.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
-  htim_right.Init.RepetitionCounter = 0;
+  htim_right.Init.RepetitionCounter = 1;
   htim_right.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   HAL_TIM_PWM_Init(&htim_right);
-
+  
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_ENABLE;
   sMasterConfig.MasterSlaveMode     = TIM_MASTERSLAVEMODE_DISABLE;
   HAL_TIMEx_MasterConfigSynchronization(&htim_right, &sMasterConfig);
-
+  
   sConfigOC.OCMode       = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse        = 0;
   sConfigOC.OCPolarity   = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCNPolarity  = TIM_OCNPOLARITY_LOW;
   sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
   sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
   sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
+  sConfigOC.Pulse  = PWM_PER - 50;
+  HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_4);
+  HAL_TIM_PWM_Start(&htim_right, TIM_CHANNEL_4);
+  
+  sConfigOC.Pulse        = 0;
   HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_1);
   HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_2);
   HAL_TIM_PWM_ConfigChannel(&htim_right, &sConfigOC, TIM_CHANNEL_3);
-
+  
   sBreakDeadTimeConfig.OffStateRunMode  = TIM_OSSR_ENABLE;
   sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_ENABLE;
   sBreakDeadTimeConfig.LockLevel        = TIM_LOCKLEVEL_OFF;
   sBreakDeadTimeConfig.DeadTime         = DEAD_TIME;
-  sBreakDeadTimeConfig.BreakState       = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakState       = TIM_BREAK_ENABLE; // For AT32 type board's overcurrent trigger, shouldn't impact other boards
   sBreakDeadTimeConfig.BreakPolarity    = TIM_BREAKPOLARITY_LOW;
   sBreakDeadTimeConfig.AutomaticOutput  = TIM_AUTOMATICOUTPUT_DISABLE;
   HAL_TIMEx_ConfigBreakDeadTime(&htim_right, &sBreakDeadTimeConfig);
+  
+  HAL_TIM_PWM_Start(&htim_right, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim_right, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim_right, TIM_CHANNEL_3);
+  HAL_TIMEx_PWMN_Start(&htim_right, TIM_CHANNEL_1);
+  HAL_TIMEx_PWMN_Start(&htim_right, TIM_CHANNEL_2);
+  HAL_TIMEx_PWMN_Start(&htim_right, TIM_CHANNEL_3);
+  
+  __HAL_TIM_ENABLE_IT(&htim_right, TIM_IT_UPDATE);
+  HAL_NVIC_SetPriority(TIM1_UP_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(TIM1_UP_IRQn);
+}
 
+void MX_TIM8_Init(void) {
+  __HAL_RCC_TIM8_CLK_ENABLE();
+  // Stop this timer when core is halted during debug
+  SET_BIT(DBGMCU->CR,DBGMCU_CR_DBG_TIM8_STOP);
+  
+  TIM_MasterConfigTypeDef sMasterConfig;
+  TIM_OC_InitTypeDef sConfigOC;
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig;
+  TIM_SlaveConfigTypeDef sTimConfig;
+  
   htim_left.Instance               = LEFT_TIM;
   htim_left.Init.Prescaler         = 0;
   htim_left.Init.CounterMode       = TIM_COUNTERMODE_CENTERALIGNED1;
-  htim_left.Init.Period            = 64000000 / 2 / PWM_FREQ;
+  htim_left.Init.Period            = PWM_PER;
   htim_left.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
   htim_left.Init.RepetitionCounter = 0;
   htim_left.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -546,53 +535,45 @@ void MX_TIM_Init(void) {
 
   // Start counting >0 to effectively offset timers by the time it takes for one ADC conversion to complete.
   // This method allows that the Phase currents ADC measurements are properly aligned with LOW-FET ON region for both motors
-  LEFT_TIM->CNT 		     = ADC_TOTAL_CONV_TIME;
+  LEFT_TIM->CNT 		     = htim_left.Init.Period; //ADC_TOTAL_CONV_TIME
 
   sConfigOC.OCMode       = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse        = 0;
   sConfigOC.OCPolarity   = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCNPolarity  = TIM_OCNPOLARITY_LOW;
   sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
   sConfigOC.OCIdleState  = TIM_OCIDLESTATE_RESET;
   sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
+  sConfigOC.Pulse  = PWM_PER - 50;
+  HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_4);
+  HAL_TIM_PWM_Start(&htim_left, TIM_CHANNEL_4);
+  
+  sConfigOC.Pulse        = 0;
   HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_1);
   HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_2);
   HAL_TIM_PWM_ConfigChannel(&htim_left, &sConfigOC, TIM_CHANNEL_3);
-
+  
   sBreakDeadTimeConfig.OffStateRunMode  = TIM_OSSR_ENABLE;
   sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_ENABLE;
   sBreakDeadTimeConfig.LockLevel        = TIM_LOCKLEVEL_OFF;
   sBreakDeadTimeConfig.DeadTime         = DEAD_TIME;
-  sBreakDeadTimeConfig.BreakState       = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakState       = TIM_BREAK_ENABLE; // For AT32 type board's overcurrent trigger, shouldn't impact other boards
   sBreakDeadTimeConfig.BreakPolarity    = TIM_BREAKPOLARITY_LOW;
   sBreakDeadTimeConfig.AutomaticOutput  = TIM_AUTOMATICOUTPUT_DISABLE;
   HAL_TIMEx_ConfigBreakDeadTime(&htim_left, &sBreakDeadTimeConfig);
-
-  LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
-  RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
-
+  
   HAL_TIM_PWM_Start(&htim_left, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim_left, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim_left, TIM_CHANNEL_3);
   HAL_TIMEx_PWMN_Start(&htim_left, TIM_CHANNEL_1);
   HAL_TIMEx_PWMN_Start(&htim_left, TIM_CHANNEL_2);
-  HAL_TIMEx_PWMN_Start(&htim_left, TIM_CHANNEL_3);  
+  HAL_TIMEx_PWMN_Start(&htim_left, TIM_CHANNEL_3);
 
-  HAL_TIM_PWM_Start(&htim_right, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim_right, TIM_CHANNEL_2);
-  HAL_TIM_PWM_Start(&htim_right, TIM_CHANNEL_3);
-  HAL_TIMEx_PWMN_Start(&htim_right, TIM_CHANNEL_1);
-  HAL_TIMEx_PWMN_Start(&htim_right, TIM_CHANNEL_2);
-  HAL_TIMEx_PWMN_Start(&htim_right, TIM_CHANNEL_3);
-
-  htim_left.Instance->RCR = 1;
-
-  __HAL_TIM_ENABLE(&htim_right);
 }
 
 void MX_ADC1_Init(void) {
   ADC_MultiModeTypeDef multimode;
   ADC_ChannelConfTypeDef sConfig;
+  ADC_InjectionConfTypeDef sConfigInjected;
 
   __HAL_RCC_ADC1_CLK_ENABLE();
 
@@ -600,110 +581,143 @@ void MX_ADC1_Init(void) {
   hadc1.Init.ScanConvMode          = ADC_SCAN_ENABLE;
   hadc1.Init.ContinuousConvMode    = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv      = ADC_EXTERNALTRIGCONV_T8_TRGO;
+  hadc1.Init.ExternalTrigConv      = ADC_SOFTWARE_START;  // Will be started manually after injected ADCs
   hadc1.Init.DataAlign             = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion       = 5;
+  hadc1.Init.NbrOfConversion       = 3;
   HAL_ADC_Init(&hadc1);
   /**Enable or disable the remapping of ADC1_ETRGREG:
     * ADC1 External Event regular conversion is connected to TIM8 TRG0
     */
-  __HAL_AFIO_REMAP_ADC1_ETRGREG_ENABLE();
+  //__HAL_AFIO_REMAP_ADC1_ETRGREG_ENABLE();
+  __HAL_AFIO_REMAP_ADC1_ETRGINJ_ENABLE();
 
   /**Configure the ADC multi-mode
     */
-  multimode.Mode = ADC_DUALMODE_REGSIMULT;
+  multimode.Mode = ADC_DUALMODE_REGSIMULT_INJECSIMULT; //ADC_DUALMODE_REGSIMULT;
   HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode);
 
   sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
-  sConfig.Channel = ADC_CHANNEL_11;  // pc1 left cur  ->  right
+  sConfig.Channel = ADC_CHANNEL_VBAT;  // pc2 vbat
   sConfig.Rank    = 1;
   HAL_ADC_ConfigChannel(&hadc1, &sConfig);
-
-  // sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
-  //sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
-  sConfig.Channel = ADC_CHANNEL_0;  // pa0 right a   ->  left
+  
+  sConfig.Channel = ADC_CHANNEL_2;  // pa2 uart-l-tx
   sConfig.Rank    = 2;
   HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
-  sConfig.Channel = ADC_CHANNEL_14;  // pc4 left b   -> right
+  //temperature requires at least 17.1uS sampling time
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;  // internal temp
   sConfig.Rank    = 3;
   HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
-  #if BOARD_VARIANT == 0
-  sConfig.Channel = ADC_CHANNEL_12;  // pc2 vbat
-  #elif BOARD_VARIANT == 1
-  sConfig.Channel = ADC_CHANNEL_1;   // pa1 vbat
-  #endif
-  sConfig.Rank    = 4;
-  HAL_ADC_ConfigChannel(&hadc1, &sConfig);
-
-  //temperature requires at least 17.1uS sampling time
-  // sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
-  sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;  // internal temp
-  sConfig.Rank    = 5;
-  HAL_ADC_ConfigChannel(&hadc1, &sConfig);
-
+  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfigInjected.InjectedChannel = ADC_CHANNEL_RIGHT_U;
+  sConfigInjected.InjectedRank    = 1;
+  sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJECCONV_T1_CC4;
+  sConfigInjected.AutoInjectedConv = DISABLE;
+  sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
+  sConfigInjected.InjectedOffset = 0;
+  sConfigInjected.InjectedNbrOfConversion = 1;
+  HAL_ADCEx_InjectedConfigChannel(&hadc1, &sConfigInjected);
+  
   hadc1.Instance->CR2 |= ADC_CR2_DMA | ADC_CR2_TSVREFE;
-
+ 
   __HAL_ADC_ENABLE(&hadc1);
-
   __HAL_RCC_DMA1_CLK_ENABLE();
+  HAL_ADCEx_Calibration_Start(&hadc1);
 
   DMA1_Channel1->CCR   = 0;
-  DMA1_Channel1->CNDTR = 5;
+  DMA1_Channel1->CNDTR = 3;
   DMA1_Channel1->CPAR  = (uint32_t) & (ADC1->DR);
   DMA1_Channel1->CMAR  = (uint32_t)&adc_buffer;
-  DMA1_Channel1->CCR   = DMA_CCR_MSIZE_1 | DMA_CCR_PSIZE_1 | DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_TCIE;
+  DMA1_Channel1->CCR   = DMA_CCR_MSIZE_1 | DMA_CCR_PSIZE_1 | DMA_CCR_MINC | DMA_CCR_CIRC;
   DMA1_Channel1->CCR |= DMA_CCR_EN;
 
-  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  HAL_ADCEx_InjectedStart_IT(&hadc1);
+  HAL_NVIC_SetPriority(ADC1_2_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(ADC1_2_IRQn);
 }
 
 /* ADC2 init function */
 void MX_ADC2_Init(void) {
   ADC_ChannelConfTypeDef sConfig;
+  ADC_InjectionConfTypeDef sConfigInjected;
 
   __HAL_RCC_ADC2_CLK_ENABLE();
 
-  // HAL_ADC_DeInit(&hadc2);
-  // hadc2.Instance->CR2 = 0;
-  /**Common config
-    */
   hadc2.Instance                   = ADC2;
   hadc2.Init.ScanConvMode          = ADC_SCAN_ENABLE;
   hadc2.Init.ContinuousConvMode    = DISABLE;
   hadc2.Init.DiscontinuousConvMode = DISABLE;
   hadc2.Init.ExternalTrigConv      = ADC_SOFTWARE_START;
   hadc2.Init.DataAlign             = ADC_DATAALIGN_RIGHT;
-  hadc2.Init.NbrOfConversion       = 5;
+  hadc2.Init.NbrOfConversion       = 3;
   HAL_ADC_Init(&hadc2);
 
- 
+  __HAL_AFIO_REMAP_ADC2_ETRGINJ_ENABLE();
+
   sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
-  sConfig.Channel = ADC_CHANNEL_10;  // pc0 right cur   -> left
+  sConfig.Channel = ADC_CHANNEL_BUTTON;  // pa1 button on/off
   sConfig.Rank    = 1;
   HAL_ADC_ConfigChannel(&hadc2, &sConfig);
 
-  // sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
-  // sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
-  sConfig.Channel = ADC_CHANNEL_13;  // pc3 right b   -> left
+  sConfig.Channel = ADC_CHANNEL_3;  // pa3 uart-l-rx
   sConfig.Rank    = 2;
   HAL_ADC_ConfigChannel(&hadc2, &sConfig);
-
-  sConfig.Channel = ADC_CHANNEL_15;  // pc5 left c   -> right
+  
+  // Voltage Reference requires at least 17.1uS sampling time
+  // This ADC reading won't work as it has to be on ADC1, but it helps keep number of channels and sampling time the same on ADC1 and ADC2
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  sConfig.Channel = ADC_CHANNEL_VREFINT;  // Voltage Reference
   sConfig.Rank    = 3;
   HAL_ADC_ConfigChannel(&hadc2, &sConfig);
 
-  sConfig.Channel = ADC_CHANNEL_2;  // pa2 uart-l-tx
-  sConfig.Rank    = 4;
-  HAL_ADC_ConfigChannel(&hadc2, &sConfig);
-
-  // sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;   // Commented-out to make `uart-l-rx` ADC sample time the same as `uart-l-tx`
-  sConfig.Channel = ADC_CHANNEL_3;  // pa3 uart-l-rx
-  sConfig.Rank    = 5;
-  HAL_ADC_ConfigChannel(&hadc2, &sConfig);
-
+  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfigInjected.InjectedChannel = ADC_CHANNEL_RIGHT_V;
+  sConfigInjected.InjectedRank    = 1;
+  sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJECCONV_T1_CC4;
+  sConfigInjected.AutoInjectedConv = DISABLE;
+  sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
+  sConfigInjected.InjectedOffset = 0;
+  sConfigInjected.InjectedNbrOfConversion = 1;
+  HAL_ADCEx_InjectedConfigChannel(&hadc2, &sConfigInjected);
+  
   hadc2.Instance->CR2 |= ADC_CR2_DMA;
   __HAL_ADC_ENABLE(&hadc2);
+  HAL_ADCEx_Calibration_Start(&hadc2);
+  
+}
+
+/* ADC3 init function */
+void MX_ADC3_Init(void) {
+  ADC_MultiModeTypeDef multimode;
+  ADC_InjectionConfTypeDef sConfigInjected;
+  
+  __HAL_RCC_ADC3_CLK_ENABLE();
+
+  hadc3.Instance                   = ADC3;
+  hadc3.Init.ScanConvMode          = ADC_SCAN_ENABLE;
+  hadc3.Init.ContinuousConvMode    = DISABLE;
+  hadc3.Init.DiscontinuousConvMode = DISABLE;
+  hadc3.Init.ExternalTrigConv      = ADC_SOFTWARE_START;
+  hadc3.Init.DataAlign             = ADC_DATAALIGN_RIGHT;
+  hadc3.Init.NbrOfConversion       = 0;
+  HAL_ADC_Init(&hadc3);
+
+  multimode.Mode = ADC_MODE_INDEPENDENT;
+  HAL_ADCEx_MultiModeConfigChannel(&hadc3, &multimode);
+
+  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfigInjected.InjectedChannel = ADC_CHANNEL_RIGHT_DC;
+  sConfigInjected.InjectedRank    = 1;
+  sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJECCONV_T1_CC4;
+  sConfigInjected.AutoInjectedConv = DISABLE;
+  sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
+  sConfigInjected.InjectedOffset = 0;
+  sConfigInjected.InjectedNbrOfConversion = 1;
+  HAL_ADCEx_InjectedConfigChannel(&hadc3, &sConfigInjected);
+
+  __HAL_ADC_ENABLE(&hadc3);
+  HAL_ADCEx_Calibration_Start(&hadc3);
 }

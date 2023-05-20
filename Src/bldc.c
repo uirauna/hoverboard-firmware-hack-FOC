@@ -27,12 +27,8 @@
 #include "setup.h"
 #include "config.h"
 #include "util.h"
+#include "bldc.h"
 #include <stdio.h>
-
-// Matlab includes and defines - from auto-code generation
-// ###############################################################################
-#include "BLDC_controller.h"           /* Model's header file */
-#include "rtwtypes.h"
 
 extern RT_MODEL *const rtM_Left;
 extern RT_MODEL *const rtM_Right;
@@ -45,15 +41,11 @@ extern P    rtP_Left;
 extern DW   rtDW_Right;                 /* Observable states */
 extern ExtU rtU_Right;                  /* External inputs */
 extern ExtY rtY_Right;                  /* External outputs */
+extern P    rtP_Right;
 // ###############################################################################
-
-static int16_t pwm_margin;              /* This margin allows to have a window in the PWM signal for proper FOC Phase currents measurement */
 
 extern uint8_t ctrlModReq;
 static int16_t curDC_max = (I_DC_MAX * A2BIT_CONV);
-int16_t curL_phaA = 0, curL_phaB = 0, curL_DC = 0;
-int16_t curR_phaB = 0, curR_phaC = 0, curR_DC = 0;
-
 volatile int pwml = 0;
 volatile int pwmr = 0;
 
@@ -65,73 +57,170 @@ uint8_t buzzerCount         = 0;
 volatile uint32_t buzzerTimer = 0;
 static uint8_t  buzzerPrev  = 0;
 static uint8_t  buzzerIdx   = 0;
+volatile int buzzerState = 0;
 
 uint8_t        enable       = 0;        // initially motors are disabled for SAFETY
 static uint8_t enableFin    = 0;
 
-static const uint16_t pwm_res  = 64000000 / 2 / PWM_FREQ; // = 2000
+// PWM
+static const uint16_t pwm_res  = PWM_PER; // = 2000
+volatile int16_t pwm_margin;              /* This margin allows to have a window in the PWM signal for proper FOC Phase currents measurement */
+uint16_t midpoint = PWM_PER / 2;
 
-static int32_T offset[2][4][7];
-static uint8_T calibState[2];
-static uint8_T test[2];
-static uint16_t offsetcount[2];
-void calibration(int8_t motor);
-void applyPWM(uint8_t motor,uint16_t u,uint16_t v,uint16_t w,uint8_t midclamp);
-uint16_t ul,vl,wl,ur,vr,wr;
+extern TIM_HandleTypeDef htim_left;
+extern TIM_HandleTypeDef htim_right;
+extern ADC_HandleTypeDef hadc1;
+extern ADC_HandleTypeDef hadc2;
+extern ADC_HandleTypeDef hadc3;
 
+// Calibration
+motor_t motorL = {
+                  .num = 0, 
+                  .htim = &htim_left,
+                  .hall_port = LEFT_HALL_U_PORT,
+                  .hallA_pin = LEFT_HALL_U_PIN,
+                  .hallB_pin = LEFT_HALL_V_PIN,
+                  .hallC_pin = LEFT_HALL_W_PIN,
+                  .ADC1_trigger = ADC1_2_EXTERNALTRIGINJEC_T8_CC4,
+                  .ADC2_trigger = ADC1_2_EXTERNALTRIGINJEC_T8_CC4,
+                  .ADC3_trigger = ADC3_EXTERNALTRIGINJEC_T8_CC4,
+                  .i_phaAB_ch  = ADC_CHANNEL_LEFT_U<<ADC_JSQR_JSQ4_Pos,
+                  .i_phaBC_ch  = ADC_CHANNEL_LEFT_V<<ADC_JSQR_JSQ4_Pos,
+                  .i_DCLink_ch = ADC_CHANNEL_LEFT_DC<<ADC_JSQR_JSQ4_Pos,
+                  .enable = MOTOR_LEFT_ENA,
+                  //.rtM = &rtM_Left,
+                  .rtY = &rtY_Left, 
+                  .rtU = &rtU_Left, 
+                  .rtP = &rtP_Left,
+                  .samplingPoint = PWM_PER - 110,
+                  .dt_comp = DT_COMP,
+                  .dt_comp_thres = DT_COMP_THRES
+                  };
+motor_t motorR = {
+                  .num = 1,
+                  .htim = &htim_right,
+                  .hall_port = RIGHT_HALL_U_PORT,
+                  .hallA_pin = RIGHT_HALL_U_PIN,
+                  .hallB_pin = RIGHT_HALL_V_PIN,
+                  .hallC_pin = RIGHT_HALL_W_PIN,
+                  .ADC1_trigger = ADC1_2_3_EXTERNALTRIGINJEC_T1_CC4,
+                  .ADC2_trigger = ADC1_2_3_EXTERNALTRIGINJEC_T1_CC4,
+                  .ADC3_trigger = ADC1_2_3_EXTERNALTRIGINJEC_T1_CC4,
+                  .i_phaAB_ch  = ADC_CHANNEL_RIGHT_U<<ADC_JSQR_JSQ4_Pos,
+                  .i_phaBC_ch  = ADC_CHANNEL_RIGHT_V<<ADC_JSQR_JSQ4_Pos,
+                  .i_DCLink_ch = ADC_CHANNEL_RIGHT_DC<<ADC_JSQR_JSQ4_Pos,
+                  .enable = MOTOR_RIGHT_ENA,
+                  //.rtM = &rtM_Right,
+                  .rtY = &rtY_Right,
+                  .rtU = &rtU_Right,
+                  .rtP = &rtP_Right,
+                  .samplingPoint = PWM_PER - 110
+                  };
+volatile uint8_T motorN;
+uint8_t phase_balancing = PHASE_BALANCING;
 
-int16_t        batVoltage       = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE;
-static int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 16;  // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
+void TIM1_UP_IRQHandler(){
+  // This runs once per TIM1 cycles because of the repetition counter
 
-// =================================
-// DMA interrupt frequency =~ 16 kHz
-// =================================
-void DMA1_Channel1_IRQHandler(void) {
+  WRITE_REG(TIM1->SR, ~(TIM_SR_UIF));
+  // Run buzzer here as CC4 and ADC interrupts stop when timer output is disabled
+  runBuzzer();
 
-  DMA1->IFCR = DMA_IFCR_CTCIF1;
+  // Start regular ADC
+  SET_BIT(ADC1->CR2, (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG));
+}
+
+void ADC1_2_IRQHandler(void){
+  GPIOA->BSRR = GPIO_BSRR_BS2; // Output high
+  __disable_irq();
+  // Reconfigure ADC triggers and channels to sample the alternate motor
+  switchADC();
+
+  // Run FOC calculation and update PWM
+  runFOC();
+
+  __HAL_ADC_CLEAR_FLAG(&hadc1, (ADC_FLAG_JSTRT | ADC_FLAG_JEOC));
+  __enable_irq();
+  GPIOA->BRR = GPIO_BRR_BR2; // Output low
+}
+
+void switchADC(void){
+  // Disable External Trigger for Injected ADC 
+  CLEAR_BIT(ADC1->CR2, ADC_CR2_JEXTTRIG);
+  CLEAR_BIT(ADC2->CR2, ADC_CR2_JEXTTRIG);
+  CLEAR_BIT(ADC3->CR2, ADC_CR2_JEXTTRIG);
+
+  // Setup the new External triggers for injected ADC
+  motorN = (READ_BIT(ADC1->CR2, ADC_CR2_JEXTSEL) == ADC1_2_3_EXTERNALTRIGINJEC_T1_CC4);
+  if (motorN == 1){
+    if (motorL.enable){
+      // Set ADC injected channels for Left Motor
+      ADC1->JSQR = motorL.i_phaAB_ch;
+      ADC2->JSQR = motorL.i_phaBC_ch;
+      ADC3->JSQR = motorL.i_DCLink_ch;
+      // Set ADC triggers for Left Motor (TIM8-CC4)
+      MODIFY_REG(ADC1->CR2,ADC_CR2_JEXTSEL,motorL.ADC1_trigger);
+      MODIFY_REG(ADC2->CR2,ADC_CR2_JEXTSEL,motorL.ADC2_trigger);
+      MODIFY_REG(ADC3->CR2,ADC_CR2_JEXTSEL,motorL.ADC3_trigger);
+    }
+  }else{
+    if (motorR.enable){
+      // Set ADC injected channels for Right Motor
+      ADC1->JSQR = motorR.i_phaAB_ch;
+      ADC2->JSQR = motorR.i_phaBC_ch;
+      ADC3->JSQR = motorR.i_DCLink_ch;
+      // Set ADC triggers for Right Motor (TIM1-CC4)
+      MODIFY_REG(ADC1->CR2,ADC_CR2_JEXTSEL,motorR.ADC1_trigger);
+      MODIFY_REG(ADC2->CR2,ADC_CR2_JEXTSEL,motorR.ADC2_trigger);
+      MODIFY_REG(ADC3->CR2,ADC_CR2_JEXTSEL,motorR.ADC3_trigger);
+    }
+  }
+
+  // Enable External trigger for Injected ADC
+  SET_BIT(ADC1->CR2, ADC_CR2_JEXTTRIG);
+  SET_BIT(ADC2->CR2, ADC_CR2_JEXTTRIG);
+  SET_BIT(ADC3->CR2, ADC_CR2_JEXTTRIG);
+}
+
+void runFOC(void){
+  
   // HAL_GPIO_WritePin(LED_PORT, LED_PIN, 1);
   // HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+  
+  // ############################### MOTOR CONTROL ###############################
 
-  calibration(0);
-  calibration(1);
-  if (calibState[0] != 5 && calibState[1] != 5){
+  static boolean_T OverrunFlag = false;
+  /* Check for overrun */
+  if (OverrunFlag) {
     return;
   }
+  OverrunFlag = true;
 
-  if (buzzerTimer % 1000 == 0) {  // Filter battery voltage at a slower sampling rate
-    filtLowPass32(adc_buffer.batt1, BAT_FILT_COEF, &batVoltageFixdt);
-    batVoltage = (int16_t)(batVoltageFixdt >> 16);  // convert fixed-point to integer
-  }
-
-  // Get Left motor currents
-  curL_DC   = (int16_t)(offset[0][0][0] - adc_buffer.dcl);
-  curL_phaA = (int16_t)(offset[0][0][1] - adc_buffer.rlA) / 6 * 5;
-  curL_phaB = (int16_t)(offset[0][0][2] - adc_buffer.rlB);
+  /* Make sure to stop BOTH motors in case of an error */
+  enableFin = enable && !rtY_Left.z_errCode && !rtY_Right.z_errCode;
   
-  // Get Right motor currents
-  curR_DC   = (int16_t)(offset[1][0][0] - adc_buffer.dcr);
-  curR_phaB = (int16_t)(offset[1][0][2] - adc_buffer.rrB);
-  curR_phaC = (int16_t)(offset[1][0][3] - adc_buffer.rrC);
-  
-
-  // Disable PWM when current limit is reached (current chopping)
-  // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
-  if(ABS(curL_DC) > curDC_max || enable == 0) {
-    LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
-  } else {
-    LEFT_TIM->BDTR |= TIM_BDTR_MOE;
+  if (motorN == 0){
+    if (motorL.enable){
+      runMotor(&motorL);
+    }else{
+      LEFT_TIM->BDTR &= ~TIM_BDTR_MOE; // Turn PWM output off if motor disabled
+    }
   }
-
-   
-  if(ABS(curR_DC)  > curDC_max || enable == 0) {
-    RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
-  } else {
-    #ifdef MOTOR_RIGHT_ENA
-    RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
-    #endif
+  if (motorN == 1){
+    if (motorR.enable){
+      runMotor(&motorR);
+    }else{
+      RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE; // Turn PWM output off if motor disabled
+    }
   }
   
+  /* Indicate task complete */
+  OverrunFlag = false;
+  
+ // ###############################################################################
+}
 
+void runBuzzer(void){
   // Create square wave for buzzer
   buzzerTimer++;
   if (buzzerFreq != 0 && (buzzerTimer / 5000) % (buzzerPattern + 1) == 0) {
@@ -142,177 +231,246 @@ void DMA1_Channel1_IRQHandler(void) {
       }
     }
     if (buzzerTimer % buzzerFreq == 0 && (buzzerIdx <= buzzerCount || buzzerCount == 0)) {
-      HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
+      buzzerState = !buzzerState;
     }
   } else if (buzzerPrev) {
-      HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, GPIO_PIN_RESET);
-      buzzerPrev = 0;
+      buzzerState = buzzerPrev = 0;
   }
-
-  // Adjust pwm_margin depending on the selected Control Type
-  if (rtP_Left.z_ctrlTypSel == FOC_CTRL) {
-    pwm_margin = 110;
-  } else {
-    pwm_margin = 0;
-  }
-
-  // ############################### MOTOR CONTROL ###############################
-  
-  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_3);
-  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
-
-  static boolean_T OverrunFlag = false;
-
-  /* Check for overrun */
-  if (OverrunFlag) {
-    return;
-  }
-  OverrunFlag = true;
-
-  /* Make sure to stop BOTH motors in case of an error */
-  enableFin = enable && !rtY_Left.z_errCode && !rtY_Right.z_errCode;
- 
-  #ifdef MOTOR_LEFT_ENA
-  // ========================= LEFT MOTOR ============================ 
-    // Get hall sensors values
-    uint8_t hall_ul = !(LEFT_HALL_U_PORT->IDR & LEFT_HALL_U_PIN);
-    uint8_t hall_vl = !(LEFT_HALL_V_PORT->IDR & LEFT_HALL_V_PIN);
-    uint8_t hall_wl = !(LEFT_HALL_W_PORT->IDR & LEFT_HALL_W_PIN);
-
-    /* Set motor inputs here */
-    rtU_Left.b_motEna     = enableFin;
-    rtU_Left.z_ctrlModReq = ctrlModReq;  
-    rtU_Left.r_inpTgt     = pwml;
-    rtU_Left.b_hallA      = hall_ul;
-    rtU_Left.b_hallB      = hall_vl;
-    rtU_Left.b_hallC      = hall_wl;
-    rtU_Left.i_phaAB      = curL_phaA;
-    rtU_Left.i_phaBC      = curL_phaB;
-    rtU_Left.i_DCLink     = curL_DC;
-    // rtU_Left.a_mechAngle   = ...; // Angle input in DEGREES [0,360] in fixdt(1,16,4) data type. If `angle` is float use `= (int16_t)floor(angle * 16.0F)` If `angle` is integer use `= (int16_t)(angle << 4)`
-    
-    /* Step the controller */
-    BLDC_controller_step(rtM_Left);
-
-    /* Get motor outputs here */
-    ul            = rtY_Left.DC_phaA;
-    vl            = rtY_Left.DC_phaB;
-    wl            = rtY_Left.DC_phaC;
-    // errCodeLeft  = rtY_Left.z_errCode;
-    // motSpeedLeft = rtY_Left.n_mot;
-    // motAngleLeft = rtY_Left.a_elecAngle;
-
-    applyPWM(0,ul,vl,wl,1);
-    // LEFT_TIM->RIGHT_TIM_U  = (uint16_t)CLAMP(ul + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    // LEFT_TIM->RIGHT_TIM_V  = (uint16_t)CLAMP(vl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    // LEFT_TIM->RIGHT_TIM_W  = (uint16_t)CLAMP(wl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-
-  // =================================================================
-  #endif
-
-  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_3);
-  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_2);
-
-  #ifdef MOTOR_RIGHT_ENA
-  // ========================= RIGHT MOTOR ===========================  
-    // Get hall sensors values
-    uint8_t hall_ur = !(RIGHT_HALL_U_PORT->IDR & RIGHT_HALL_U_PIN);
-    uint8_t hall_vr = !(RIGHT_HALL_V_PORT->IDR & RIGHT_HALL_V_PIN);
-    uint8_t hall_wr = !(RIGHT_HALL_W_PORT->IDR & RIGHT_HALL_W_PIN);
-
-    /* Set motor inputs here */
-    rtU_Right.b_motEna      = enableFin;
-    rtU_Right.z_ctrlModReq  = ctrlModReq;
-    rtU_Right.r_inpTgt      = pwmr;
-    rtU_Right.b_hallA       = hall_ur;
-    rtU_Right.b_hallB       = hall_vr;
-    rtU_Right.b_hallC       = hall_wr;
-    rtU_Right.i_phaAB       = curR_phaB;
-    rtU_Right.i_phaBC       = curR_phaC;
-    rtU_Right.i_DCLink      = curR_DC;
-    // rtU_Right.a_mechAngle   = ...; // Angle input in DEGREES [0,360] in fixdt(1,16,4) data type. If `angle` is float use `= (int16_t)floor(angle * 16.0F)` If `angle` is integer use `= (int16_t)(angle << 4)`
-    
-    /* Step the controller */
-    BLDC_controller_step(rtM_Right);
-
-    /* Get motor outputs here */
-    ur            = rtY_Right.DC_phaA;
-    vr            = rtY_Right.DC_phaB;
-    wr            = rtY_Right.DC_phaC;
-    // errCodeRight  = rtY_Right.z_errCode;
-    // motSpeedRight = rtY_Right.n_mot;
-    // motAngleRight = rtY_Right.a_elecAngle;
-
-    /* Apply commands */
-    applyPWM(1,ur,vr,wl,1);
-    // RIGHT_TIM->RIGHT_TIM_U  = (uint16_t)CLAMP(ur + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    // RIGHT_TIM->RIGHT_TIM_V  = (uint16_t)CLAMP(vr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    // RIGHT_TIM->RIGHT_TIM_W  = (uint16_t)CLAMP(wr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-  
-  // =================================================================
-  #endif
-
-  /* Indicate task complete */
-  OverrunFlag = false;
- 
- // ###############################################################################
-
+  BUZZER_PORT->BSRR = (uint32_t)(buzzerState ? BUZZER_PIN : BUZZER_PIN << 16U);
 }
 
-void calibration(int8_T motor){
-  #define SAMPLES 1000   // Number of samples for each test
-  #define WAIT_HALL 1000 // Number of cycles to wait
-  #define PWM   150      // PWM value for tests
+void runMotor(motor_t *motor){
+  // ############################### MOTOR CONTROL ###############################
+
+  // Works because all the halls from same motor are on the same GPIO port, so we can read whole port state in one go
+  uint32_t tmp_IDR = (motor->hall_port)->IDR;
+
+  /* Set motor inputs here */
+  motor->rtU->b_motEna     = enableFin && motor->enable;
+  motor->rtP->b_diagEna    = motor->test < 7 ? 0 : motor->enable; // Diag off during checks
+  motor->rtU->z_ctrlModReq = ctrlModReq;
+  motor->rtU->r_inpTgt     = motor->num == 0 ? pwml : pwmr;
+  motor->rtU->b_hallA      = !(tmp_IDR & motor->hallA_pin);
+  motor->rtU->b_hallB      = !(tmp_IDR & motor->hallB_pin);
+  motor->rtU->b_hallC      = !(tmp_IDR & motor->hallC_pin);
+  // rtU_Left.a_mechAngle   = ...; // Angle input in DEGREES [0,360] in fixdt(1,16,4) data type. If `angle` is float use `= (int16_t)floor(angle * 16.0F)` If `angle` is integer use `= (int16_t)(angle << 4)`
   
-  #define DC_CHECK    // Each phase will be energized and DC current will be measured
-  #define PHASE_CHECK // Each phase will be energized and phase current will be measured
-  #define HALL_CHECK  // Each phase will be energized for a longer time and hall sensor will be measured
+  // Test 0 is offset calibration, after that offset can be substracted from adc reading
+  motor->rtU->i_phaAB      = (int16_t)(motor->test== 0 ? ADC1->JDR1 : motor->calib[0].i_phaAB  - ADC1->JDR1);
+  motor->rtU->i_phaBC      = (int16_t)(motor->test== 0 ? ADC2->JDR1 : motor->calib[0].i_phaBC  - ADC2->JDR1);
+  motor->rtU->i_DCLink     = (int16_t)(motor->test== 0 ? ADC3->JDR1 : motor->calib[0].i_DCLink - ADC3->JDR1);
   
-  switch (calibState[motor]){
+  if (motor->test > 0){ // After offset calibration only
+    // Disable PWM when current limit is reached (current chopping)
+    // This is the Level 2 of current protection. The Level 1 should kick in first given by I_MOT_MAX
+    if(ABS(motor->rtU->i_DCLink) > curDC_max) {
+      motor->htim->Instance->BDTR &= ~TIM_BDTR_MOE;
+    }
+  }
+
+  // Run calibration/tests
+  calibration(motor);
+  
+  /* Step the controller */
+  if (motor->num == 0){
+    BLDC_controller_step(rtM_Left);
+  }else{
+    BLDC_controller_step(rtM_Right);
+  }
+  
+  if (motor->test> 3){
+    motor->duty[0] = motor->rtY->DC_phaA;
+    motor->duty[1] = motor->rtY->DC_phaB;
+    motor->duty[2] = motor->rtY->DC_phaC;
+    for(int i=0;i<3;i++){
+      // Compensation deadtime by adding or substracting the deadtime depending on the sign if value is higher than deadband 
+      if (motor->rtU->z_ctrlModReq == VLT_MODE && motor->dt_comp > 0)  motor->duty[i] += ABS(motor->duty[i]) >= motor->dt_comp_thres ? SIGN(motor->duty[i]) * motor->dt_comp : MAP(motor->duty[i],0,motor->dt_comp_thres,0,motor->dt_comp);
+      // Apply midpoint clamp and PWM Margin to allow current measurement for FOC
+      motor->duty[i] = (uint16_t)CLAMP(motor->duty[i] + midpoint, pwm_margin, pwm_res-pwm_margin);
+    }
+  }
+
+  // Set motor outputs
+  motor->htim->Instance->CCR1  = motor->duty[0];
+  motor->htim->Instance->CCR2  = motor->duty[1];
+  motor->htim->Instance->CCR3  = motor->duty[2];
+  motor->htim->Instance->CCR4  = motor->samplingPoint;
+
+  // =================================================================
+}
+
+void enableMotors(uint8_t silent){
+  if (motorR.enable){
+    RIGHT_TIM->BDTR |= TIM_BDTR_MOE;
+    RIGHT_TIM->BDTR |= TIM_BDTR_AOE;
+  }
+
+  if (motorL.enable){
+    LEFT_TIM->BDTR |= TIM_BDTR_MOE;
+    LEFT_TIM->BDTR |= TIM_BDTR_AOE;
+  }
+  
+  if (silent) return;
+
+  // make 2 beeps indicating the motor enable
+  beepShort(6); beepShort(4);
+  HAL_Delay(100);
+  enable = 1; // enable motors
+  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+  printf("-- Motors enabled --\r\n");
+  #endif
+}
+
+void disableMotors(uint8_t silent){
+  if (motorR.enable){
+    RIGHT_TIM->BDTR &= ~TIM_BDTR_MOE;
+    RIGHT_TIM->BDTR &= ~TIM_BDTR_AOE;
+  }
+  
+  if (motorL.enable){
+    LEFT_TIM->BDTR &= ~TIM_BDTR_MOE;
+    LEFT_TIM->BDTR &= ~TIM_BDTR_AOE;
+  }
+
+  if (silent) return;
+
+  // make 2 beeps indicating the motor disable
+  beepShort(4); beepShort(6);
+  HAL_Delay(100);
+  enable = 0; // enable motors
+  #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+  printf("-- Motors disabled --\r\n");
+  #endif
+}
+
+void calibration(motor_t *motor){
+  #define SAMPLES   1000 // Number of samples for each test. Higher can overflow
+  #define WAIT      1000 // Number of cycles to wait
+  #define TEST_PWM  80   // PWM value for tests
+  #define PHASE_CHECK_THRESHOLD 10 // Value must be higher than this
+  #define END_ANGLE 3 * 16 * 360 
+  uint8_t pwm = 0;
+  uint8_t pos = (motor->rtU->b_hallA<<2) + (motor->rtU->b_hallB<<1) + motor->rtU->b_hallC;
+
+  switch (motor->state){
     case 0:
-      // TEST 0
-      // Turn PWM ON for all phased for current offset measurement
-      applyPWM(motor,0,0,0,1);
-      calibState[motor]=10;
-      test[motor] = 0;
+      // TEST 0 - calibration phase current offset, all pwm's are 0
+      motor->test  = 0;
+      motor->state = 10; // Next State 
       break;
     case 1:
-      // TEST 1
-      // Set PWM for phase U only
-      applyPWM(motor,PWM,0,0,0);
-      calibState[motor]=10;
-      test[motor] = 1;
+      // TEST 1 - power only phase U
+      motor->test  = 1;
+      motor->state = 10; // Next State
       break;
     case 2:
-      //TEST 2
-      // Set PWM for phase V only
-      applyPWM(motor,0,PWM,0,0);
-      calibState[motor]=10;
-      test[motor] = 2;
+      // TEST 2 - power only phase V
+      motor->test  = 2;
+      motor->state = 10; // Next State
       break;
     case 3:
-      //TEST 3
-      // Set PWM for phase W only
-       applyPWM(motor,0,0,PWM,0);
-      calibState[motor]=10;
-      test[motor] = 3;
+      // TEST 3 - power only phase W
+      motor->test  = 3;
+      motor->state = 10; // Next State
       break;
     case 4:
-      // Print results
-      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
-        printf("\r\n");
-        printf(motor==0 ? "Left " : "Right ");
-        printf("Motor\r\n");
-        printf("+-------+-----+-----+-----+-----+-----+-----+-----+-----+-----+----+\r\n");
-        printf("|-------|DCCUR|PHA-A|PHA-B|PHA-C|HALLA|HALLB|HALLC|DCCUR|PHASE|HALL|\r\n");
-        printf("+-------+-----+-----+-----+-----+-----+-----+-----+-----+-----+----+\r\n");
+      // TEST 4 - hall autodetect
+      motor->test  = 4;
+      motor->rtU->b_motEna = motor->rtP->b_angleMeasEna = 1;
+      motor->rtU->z_ctrlModReq = VLT_MODE;
+      motor->rtU->r_inpTgt = TEST_PWM;
+           
+      switch (motor->substate){
+        case 0:
+          motor->autodetect_dir = 1;
+          // Reinit HalltoAngle table
+          for(int i = 0;i<8;i++) motor->vec_hallToAngle_Value[0][i] = motor->vec_hallToAngle_Value[1][i] = 0;
 
-        int i,j;
-        #if defined(PHASE_CHECK) || defined(HALL_CHECK)
-        for(i=0;i<4;i++){
-        #else
-        for(i=0;i<1;i++){
-        #endif
+          motor->hallA_min = motor->hallB_min = motor->hallC_min = 1;
+          motor->hallA_max = motor->hallB_max = motor->hallC_max = 0;
+
+          motor->calib[motor->test].count = 0; // Reset counter for next substate
+          motor->substate++;
+          break;
+        case 1:
+          // Use angle input as a workaround to run in the motor in open mode, being able to target a particular electric angle
+          motor->rtU->a_mechAngle = 0;
+          motor->rtU->r_inpTgt = MAP(motor->calib[motor->test].count,0,WAIT,0,TEST_PWM);
+          // Wait for motor to align
+          if (motor->calib[motor->test].count++ == WAIT ) motor->substate++;
+          break;
+        case 2:
+          if (( motor->autodetect_dir == 1 && (motor->rtU->a_mechAngle < END_ANGLE / motor->rtP->n_polePairs))||
+              ( motor->autodetect_dir == -1 && (motor->rtU->a_mechAngle > 0))){
+            
+            // Wait for motor to align to this angle
+            if (motor->calib[motor->test].count++ % 100 == 0){
+              // Electrical angle without wraping around 360-0
+              motor->a_elecAngle = (motor->rtU->a_mechAngle * motor->rtP->n_polePairs / 16);
+              
+              // Accumulate angle and increment count for hall position
+              motor->vec_hallToAngle_Value[0][pos] += motor->a_elecAngle;
+              motor->vec_hallToAngle_Value[1][pos]++;
+            
+              // Increment mechanical angle
+              motor->rtU->a_mechAngle+= motor->autodetect_dir;
+             
+              // Save min/max state for hall
+              motor->hallA_min = MIN(motor->hallA_min,motor->rtU->b_hallA);
+              motor->hallB_min = MIN(motor->hallB_min,motor->rtU->b_hallB);
+              motor->hallC_min = MIN(motor->hallC_min,motor->rtU->b_hallC);
+              motor->hallA_max = MAX(motor->hallA_max,motor->rtU->b_hallA);
+              motor->hallB_max = MAX(motor->hallB_max,motor->rtU->b_hallB);
+              motor->hallC_max = MAX(motor->hallC_max,motor->rtU->b_hallC);            
+            }
+            
+            //if ( motor->autodetect_dir == 1) motor->rtP->vec_hallToPos_Value[pos] = (motor->rtY->a_elecAngle+60)/60 % 6;
+          }else{
+            if (motor->autodetect_dir == 1){
+              // Change direction
+              motor->autodetect_dir = -1;
+            }else{
+              // End
+              motor->substate++;
+            }
+          }
+          break;
+        case 3:
+          // Calculate Average Angle for each hall position
+          for(int i = 0;i<8;i++){
+            motor->vec_hallToAngle_Value[0][i] = (motor->vec_hallToAngle_Value[0][i] / motor->vec_hallToAngle_Value[1][i]) % 360;
+            if (motor->vec_hallToAngle_Value[1][i] != 0){
+              motor->rtP->vec_hallToPos_Value[i] = ( ( motor->vec_hallToAngle_Value[0][i] + 60) / 60 ) % 6; 
+            }
+          }
+        
+          // Check if hall state changed
+          motor->hallA_ok = motor->hallA_min != motor->hallA_max; 
+          motor->hallB_ok = motor->hallB_min != motor->hallB_max;
+          motor->hallC_ok = motor->hallC_min != motor->hallC_max;
+
+          motor->calib[motor->test].count = 0;
+          motor->substate++;
+          break;
+        case 4:
+          motor->rtU->r_inpTgt = MAP(motor->calib[motor->test].count,0,WAIT,TEST_PWM,0);
+          
+          if (motor->calib[motor->test].count++ == WAIT ) {
+            motor->rtP->b_angleMeasEna = 0;
+            motor->substate = 0;
+            motor->state++;
+          }
+          break;
+      }
+      break;
+    case 5:
+      // Print results
+      #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3) || defined(DEBUG_SEGGER_RTT)
+        printf("\r\n %s Motor\r\n",motor->num==0 ? "Left " : "Right ");
+        printf("+-------+-----+------+------+-----+-----+\r\n");
+        printf("|-------|DCCUR|PHA-AB|PHA-BC|DCCUR|PHASE|\r\n");
+        printf("+-------+-----+------+------+-----+-----+\r\n");
+        for(int i=0;i<(motor->test);i++){
           switch (i){
             case 0:
               printf("|Offsets");
@@ -326,148 +484,138 @@ void calibration(int8_T motor){
             case 3:
               printf("|Phase C");
               break;
-          } 
-          for(j=0;j<7;j++){
-            printf("|%05i",offset[motor][i][j]);
           }
-          // Check phase current value
-          if (i>0){ // First test is for offsets
-            #if defined(DC_CHECK)
-            printf(offset[motor][i][0] < 0 ? "|___OK" : "|__NOK"); // Is DC current high enough
-            #else
-            printf("|_____");
-            #endif
-
-            #if defined(PHASE_CHECK)
-            // Check only valid phases for each motor
-            if (!(motor == 0 && i ==3)  && !(motor == 1 && i ==1)){
-              printf(offset[motor][i][i] > 5 ? "|___OK" : "|__NOK"); // Is Phase current high enough
-            }else{
-              printf("|_____");
-            }
-            #else
-              printf("|_____");
-            #endif
-
-            #if defined(HALL_CHECK)
-            uint8_t hallpos = (uint8_t)((offset[motor][i][4]<<2) + (offset[motor][i][5]<<1) + offset[motor][i][6]);
-            uint8_t hallmap[4] = {0,6,3,5}; // Expected positions
-            printf(hallpos == hallmap[i] ? "|__OK" : "|_NOK"); // Is position the expected one
-            #else
-            printf("|____"); // Is position the expected one
-            #endif
-          }else{
-            printf("|_____|_____|____");
-          }
-          printf("|\r\n+-------+-----+-----+-----+-----+-----+-----+-----+-----+-----+----+\r\n");
+          
+          printf("|%05li|%06li|%06li|%s|%s|\r\n",
+                 motor->calib[i].i_DCLink,
+                 motor->calib[i].i_phaAB,
+                 motor->calib[i].i_phaBC,
+                 motor->calib[i].dccheck    == -1 ? "_____" : motor->calib[i].dccheck    == 1 ? "___OK" : "__NOK",
+                 motor->calib[i].phasecheck == -1 ? "_____" : motor->calib[i].phasecheck == 1 ? "___OK" : "__NOK"
+                );
         }
+        if (motor->phaseSwapped) printf("Phase current swapped\r\n");
         printf("\r\n");
+        
+        printf("Hall Positions\r\n");
+        for(int i = 0;i<8;i++){
+          printf("%i,",motor->rtP->vec_hallToPos_Value[i]);
+        }
+        printf("\r\nHall Angles\r\n");
+        for(int i = 0;i<8;i++){
+          printf("%i,",motor->vec_hallToAngle_Value[0][i]);
+        }  
+        printf("\r\n\r\n");
+
+        printf("Hall A  B  C \r\n");
+        printf("Min- %i %i %i\r\n",motor->hallA_min,motor->hallB_min,motor->hallC_min);
+        printf("Max- %i %i %i\r\n",motor->hallA_max,motor->hallB_max,motor->hallC_max);
+        printf("OK?- %i %i %i\r\n",motor->hallA_ok ,motor->hallB_ok ,motor->hallC_ok);
+        
       #endif
-      calibState[motor]++;
+      motor->state++; // Next State
       break;
-    case 5:
-      // No more tests
-      return;
+    case 6:
+      // Process errors
+      if (motor->hallA_max + motor->hallB_max + motor->hallC_max == 0){
+        // all halls are always low, cable not plugged ? missing 5v or GND ?
+        motor->rtY->z_errCode = 3;
+      }else if ( motor->hallA_max + motor->hallB_max + motor->hallC_max < 3 ){
+        // at least one hall is always low, it's defective
+        motor->rtY->z_errCode = 1;
+      }else if ( motor->hallA_min + motor->hallB_min + motor->hallC_min > 0 ){
+        // at least one hall is always high, it's shorted
+        motor->rtY->z_errCode = 2;
+      }
+
+      motor->state++; // Next State
+      break;
+    case 7:
+      // End
       break;
     case 10:
       // Initialize counter
-      offsetcount[motor] = 0;
-      #ifdef HALL_CHECK
-      calibState[motor]++;
-      #else
-      calibState[motor]+=2; // Skip next state if hal check is not needed
-      #endif
+      motor->calib[motor->test].count = 0;
+      motor->state++; // Next State
       break;
     case 11:
-      // Give enough time for the wheel to spin, only necessary for HALL_CHECK
-      if (offsetcount[motor] == WAIT_HALL) calibState[motor]++;
-      offsetcount[motor]++;
+      // Increase pwm until reaching TEST_PWM for each Phase depending on test number
+      pwm = MAP(motor->calib[motor->test].count,0, WAIT, 0, TEST_PWM);
+      motor->duty[0] = (motor->test == 1) ? pwm : 0;
+      motor->duty[1] = (motor->test == 2) ? pwm : 0;
+      motor->duty[2] = (motor->test == 3) ? pwm : 0;
+      if (motor->calib[motor->test].count++ == WAIT - 1) motor->state++;
       break;  
     case 12:
       // Initialize variables
-      offsetcount[motor] = 0;
-      offset[motor][test[motor]][0] = 0;
-      offset[motor][test[motor]][1] = 0;
-      offset[motor][test[motor]][2] = 0;
-      offset[motor][test[motor]][3] = 0;
-
-      #if defined(HALL_CHECK)
-      if (test[motor]>0){
-        // Record all sensor state
-        offset[motor][test[motor]][4] = motor==0 ? !(LEFT_HALL_U_PORT->IDR & LEFT_HALL_U_PIN) : !(RIGHT_HALL_U_PORT->IDR & RIGHT_HALL_U_PIN);
-        offset[motor][test[motor]][5] = motor==0 ? !(LEFT_HALL_V_PORT->IDR & LEFT_HALL_V_PIN) : !(RIGHT_HALL_V_PORT->IDR & RIGHT_HALL_V_PIN);
-        offset[motor][test[motor]][6] = motor==0 ? !(LEFT_HALL_W_PORT->IDR & LEFT_HALL_W_PIN) : !(RIGHT_HALL_W_PORT->IDR & RIGHT_HALL_W_PIN);
-      }
-      #endif
-
-      calibState[motor]++;
+      motor->calib[motor->test].count      = 0;
+      motor->calib[motor->test].i_phaAB    = 0;
+      motor->calib[motor->test].i_phaBC    = 0;
+      motor->calib[motor->test].i_DCLink   = 0;
+      motor->calib[motor->test].dccheck    = -1;
+      motor->calib[motor->test].phasecheck = -1;
+      motor->state++;
       break;
     case 13:
-      // Sum of ADC values
-      offset[motor][test[motor]][0] += motor == 0 ? adc_buffer.dcl : adc_buffer.dcr;
-      offset[motor][test[motor]][1] += motor == 0 ? adc_buffer.rlA : 0;
-      offset[motor][test[motor]][2] += motor == 0 ? adc_buffer.rlB : adc_buffer.rrB;
-      offset[motor][test[motor]][3] += motor == 0 ? 0              : adc_buffer.rrC;
-      offsetcount[motor] ++;
-      if (offsetcount[motor] == SAMPLES) calibState[motor]++;
+      // Integrate ADC values
+      motor->calib[motor->test].i_phaAB  += motor->rtU->i_phaAB;
+      motor->calib[motor->test].i_phaBC  += motor->rtU->i_phaBC;
+      motor->calib[motor->test].i_DCLink += motor->rtU->i_DCLink;
+      if (motor->calib[motor->test].count++ == SAMPLES-1) motor->state++;
       break; 
     case 14:
       // Calculate average
-      offset[motor][test[motor]][0] /= SAMPLES;
-      offset[motor][test[motor]][1] /= SAMPLES;
-      offset[motor][test[motor]][2] /= SAMPLES;
-      offset[motor][test[motor]][3] /= SAMPLES;
-      if (test[motor]>0){
-         // Susbtract from offset if it's not the first test
-         offset[motor][test[motor]][0] = (int32_t) (offset[motor][0][0] - offset[motor][test[motor]][0]);
-         offset[motor][test[motor]][1] = (int32_t) (offset[motor][0][1] - offset[motor][test[motor]][1]);
-         offset[motor][test[motor]][2] = (int32_t) (offset[motor][0][2] - offset[motor][test[motor]][2]);
-         offset[motor][test[motor]][3] = (int32_t) (offset[motor][0][3] - offset[motor][test[motor]][3]);
+      motor->calib[motor->test].i_phaAB  /= SAMPLES;
+      motor->calib[motor->test].i_phaBC  /= SAMPLES;
+      motor->calib[motor->test].i_DCLink /= SAMPLES;
+      
+      if (IN_RANGE(motor->test,1,3)){
+        motor->calib[motor->test].dccheck = (motor->calib[motor->test].i_DCLink < 0);
+        
+        if (motor->num == 0 && motor->test == 1 ) motor->calib[motor->test].phasecheck = (motor->calib[motor->test].i_phaAB > PHASE_CHECK_THRESHOLD);
+        if (motor->num == 0 && motor->test == 2 ) motor->calib[motor->test].phasecheck = (motor->calib[motor->test].i_phaBC > PHASE_CHECK_THRESHOLD);
+        if (motor->num == 1 && motor->test == 2 ) motor->calib[motor->test].phasecheck = (motor->calib[motor->test].i_phaAB > PHASE_CHECK_THRESHOLD);
+        if (motor->num == 1 && motor->test == 3 ) motor->calib[motor->test].phasecheck = (motor->calib[motor->test].i_phaBC > PHASE_CHECK_THRESHOLD);
       }
 
-      test[motor]++;
-      #if defined(DC_CHECK) || defined(PHASE_CHECK) || defined(HALL_CHECK)
-        calibState[motor] = test[motor];
-      #else
-        calibState[motor] = 4; // If Phase check is not needed, skip test 1-2-3
-      #endif
+      if (motor->test == 3 &&
+         (( motor->num == 0 && 
+           motor->calib[1].phasecheck == 0 && 
+           motor->calib[2].phasecheck == 0 && 
+           motor->calib[1].i_phaBC > PHASE_CHECK_THRESHOLD &&
+           motor->calib[2].i_phaAB > PHASE_CHECK_THRESHOLD) || 
+         ( motor->num == 1 && 
+           motor->calib[2].phasecheck == 0 && 
+           motor->calib[3].phasecheck == 0 && 
+           motor->calib[2].i_phaBC > PHASE_CHECK_THRESHOLD &&
+           motor->calib[3].i_phaAB > PHASE_CHECK_THRESHOLD))) {
+        // Phase current are swapped
+        uint32_t tmp_ch,i_phaTMP;
+        // Swap ADC channels
+        tmp_ch = motor->i_phaAB_ch;
+        motor->i_phaAB_ch = motor->i_phaBC_ch;
+        motor->i_phaBC_ch = tmp_ch;
+        // Swap Offsets
+        i_phaTMP = motor->calib[0].i_phaAB;
+        motor->calib[0].i_phaAB = motor->calib[0].i_phaBC;
+        motor->calib[0].i_phaBC = i_phaTMP;
+
+        motor->phaseSwapped = 1;
+        motor->test = 1; // Redo the test to clear the checks  
+      }else{
+        if (motor->test == 0){
+          // Only Offset calibration at startup
+          motor->test++; // = 7;
+        }else{
+          // Autodetect
+          motor->test++;
+        }
+      }
+      motor->state = motor->test;
+
       break;
     default:
        break;
-  }
-  
-}
-
-
-void applyPWM(uint8_t motor,uint16_t u,uint16_t v,uint16_t w,uint8_t midclamp){
-  
-  #define DEADTIME_COMPENSATION 0
-  #define DEADTIME_DEADBAND 10
-
-  // Compensation deadtime by adding or substracting the deadtime depending on the sign if value is higher than deadband 
-  if (DEADTIME_COMPENSATION > 0){
-    u += (uint16_t)(ABS(u) > DEADTIME_DEADBAND ? SIGN(u) * DEADTIME_COMPENSATION : 0);
-    v += (uint16_t)(ABS(v) > DEADTIME_DEADBAND ? SIGN(v) * DEADTIME_COMPENSATION : 0);
-    w += (uint16_t)(ABS(w) > DEADTIME_DEADBAND ? SIGN(w) * DEADTIME_COMPENSATION : 0);
-  }
-
-  // Apply midpoint clamp
-  if (midclamp){
-    u = (uint16_t)CLAMP(u + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    v = (uint16_t)CLAMP(v + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-    w = (uint16_t)CLAMP(w + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
-  }
-
-  if (motor==0){
-     // motor 0 is left one
-     LEFT_TIM->LEFT_TIM_U  = u;
-     LEFT_TIM->LEFT_TIM_V  = v;
-     LEFT_TIM->LEFT_TIM_W  = w;
-  }else if(motor==1){
-     // motor 1 is right one
-     RIGHT_TIM->RIGHT_TIM_U  = u;
-     RIGHT_TIM->RIGHT_TIM_V  = v;
-     RIGHT_TIM->RIGHT_TIM_W  = w;
-  }
+  }     
 }
 

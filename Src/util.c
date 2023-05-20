@@ -31,6 +31,7 @@
 #include "rtwtypes.h"
 #include "comms.h"
 #include "SEGGER_RTT.h"
+#include "bldc.h"
 
 #if defined(DEBUG_I2C_LCD) || defined(SUPPORT_LCD)
 #include "hd44780.h"
@@ -53,6 +54,8 @@ extern uint8_t buzzerFreq;              // global variable for the buzzer pitch.
 extern uint8_t buzzerPattern;           // global variable for the buzzer pattern. can be 1, 2, 3, 4, 5, 6, 7...
 
 extern uint8_t enable;                  // global variable for motor enable
+extern motor_t motorL;
+extern motor_t motorR;
 
 extern uint8_t nunchuk_data[6];
 extern volatile uint32_t timeoutCntGen; // global counter for general timeout counter
@@ -240,10 +243,10 @@ void BLDC_Init(void) {
   rtP_Left.z_selPhaCurMeasABC   = 0;            // Left motor measured current phases {Green, Blue} = {iA, iB} -> do NOT change
   rtP_Left.z_ctrlTypSel         = CTRL_TYP_SEL;
   rtP_Left.b_diagEna            = DIAG_ENA;
-  rtP_Left.i_max                = (I_MOT_MAX * A2BIT_CONV) << 4;        // fixdt(1,16,4)
+  rtP_Left.i_max                = (uint8_t)(I_MOT_MAX * A2BIT_CONV) << 4;        // fixdt(1,16,4)
   rtP_Left.n_max                = N_MOT_MAX << 4;                       // fixdt(1,16,4)
   rtP_Left.b_fieldWeakEna       = FIELD_WEAK_ENA; 
-  rtP_Left.id_fieldWeakMax      = (FIELD_WEAK_MAX * A2BIT_CONV) << 4;   // fixdt(1,16,4)
+  rtP_Left.id_fieldWeakMax      = (uint8_t)(FIELD_WEAK_MAX * A2BIT_CONV) << 4;   // fixdt(1,16,4)
   rtP_Left.a_phaAdvMax          = PHASE_ADV_MAX << 4;                   // fixdt(1,16,4)
   rtP_Left.r_fieldWeakHi        = FIELD_WEAK_HI << 4;                   // fixdt(1,16,4)
   rtP_Left.r_fieldWeakLo        = FIELD_WEAK_LO << 4;                   // fixdt(1,16,4)
@@ -465,14 +468,14 @@ void beepShortMany(uint8_t cnt, int8_t dir) {
 void calcAvgSpeed(void) {
     // Calculate measured average speed. The minus sign (-) is because motors spin in opposite directions
     speedAvg = 0;
-    #if defined(MOTOR_LEFT_ENA)
+    if (motorL.enable){
       #if defined(INVERT_L_DIRECTION)
         speedAvg -= rtY_Left.n_mot;
       #else
         speedAvg += rtY_Left.n_mot;
       #endif
-    #endif
-    #if defined(MOTOR_RIGHT_ENA)
+    }
+    if (motorR.enable){
       #if defined(INVERT_R_DIRECTION)
         speedAvg += rtY_Right.n_mot;
       #else
@@ -480,10 +483,8 @@ void calcAvgSpeed(void) {
       #endif
 
       // Average only if both motors are enabled
-      #if defined(MOTOR_LEFT_ENA)
-        speedAvg /= 2;
-      #endif  
-    #endif
+      if (motorL.enable) speedAvg /= 2;
+    }
 
     // Handle the case when SPEED_COEFFICIENT sign is negative (which is when most significant bit is 1)
     if (SPEED_COEFFICIENT & (1 << 16)) {
@@ -535,7 +536,7 @@ void adcCalibLim(void) {
   #endif
 
   // Extract MIN, MAX and MID from ADC while the power button is not pressed
-  while (!HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) && input_cal_timeout++ < 4000) {   // 20 sec timeout
+  while (!onoffpressed() && input_cal_timeout++ < 4000) {   // 20 sec timeout
     readInputRaw();
     filtLowPass32(input1[inIdx].raw, FILTER, &input1_fixdt);
     filtLowPass32(input2[inIdx].raw, FILTER, &input2_fixdt);
@@ -634,7 +635,7 @@ void updateCurSpdLim(void) {
   cur_spd_valid = 0;
 
   // Wait for the power button press
-  while (!HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) && cur_spd_timeout++ < 2000) {  // 10 sec timeout
+  while (!onoffpressed() && cur_spd_timeout++ < 2000) {  // 10 sec timeout
     readInputRaw();
     filtLowPass32(input1[inIdx].raw, FILTER, &input1_fixdt);
     filtLowPass32(input2[inIdx].raw, FILTER, &input2_fixdt);
@@ -646,7 +647,7 @@ void updateCurSpdLim(void) {
       
   if (input1[inIdx].typ != 0){
     // Update current limit
-    rtP_Left.i_max = rtP_Right.i_max  = (int16_t)((I_MOT_MAX * A2BIT_CONV * cur_factor) >> 12);    // fixdt(0,16,16) to fixdt(1,16,4)
+    rtP_Left.i_max = rtP_Right.i_max  = ((int16_t)(I_MOT_MAX * A2BIT_CONV * cur_factor) >> 12);    // fixdt(0,16,16) to fixdt(1,16,4)
     cur_spd_valid   = 1;  // Mark update to be saved in Flash at shutdown
   }
 
@@ -1559,22 +1560,29 @@ void poweroff(void) {
   while(1) {}
 }
 
+int8_t onoffpressed(void){
+   #if BOARD_VARIANT == 1
+     return HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN);
+   #else
+     return adc_buffer.onoff > 200;
+   #endif
+}
 
 void poweroffPressCheck(void) {
   #if !defined(VARIANT_HOVERBOARD) && !defined(VARIANT_TRANSPOTTER)
-    if(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {
+    if(onoffpressed()) {
       uint16_t cnt_press = 0;
-      while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {
+      while(onoffpressed()) {
         HAL_Delay(10);
         if (cnt_press++ == 5 * 100) { beepShort(5); }
       }
 
-      if (cnt_press > 8) enable = 0;
+      if (cnt_press > 8) disableMotors(0);
 
       if (cnt_press >= 5 * 100) {                         // Check if press is more than 5 sec
         HAL_Delay(1000);
-        if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {  // Double press: Adjust Max Current, Max Speed
-          while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
+        if (onoffpressed()) {  // Double press: Adjust Max Current, Max Speed
+          while(onoffpressed()) { HAL_Delay(10); }
           beepLong(8);
           updateCurSpdLim();
           beepShort(5);
@@ -1593,13 +1601,13 @@ void poweroffPressCheck(void) {
       }
     }
   #elif defined(VARIANT_TRANSPOTTER)
-    if(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {
+    if(onoffpressed()) {
       enable = 0;
-      while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
+      while(onoffpressed()) { HAL_Delay(10); }
       beepShort(5);
       HAL_Delay(300);
-      if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {
-        while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
+      if (onoffpressed()) {
+        while(onoffpressed()) { HAL_Delay(10); }
         beepLong(5);
         HAL_Delay(350);
         poweroff();
@@ -1614,9 +1622,9 @@ void poweroffPressCheck(void) {
       }
     }
   #else
-    if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {
+    if (onoffpressed()) {
       enable = 0;                                             // disable motors
-      while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {}    // wait until button is released
+      while (onoffpressed()) {}    // wait until button is released
       poweroff();                                             // release power-latch
     }
   #endif
