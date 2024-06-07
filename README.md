@@ -8,6 +8,19 @@ This repository implements Field Oriented Control (FOC) for stock hoverboards. C
  - smooth torque output and improved motor efficiency. Thus, lower energy consumption
  - field weakening to increase maximum speed range
 
+This branch is for combat robot drive:
+- battery level alert and turn off are disabled
+- no inactivity check
+- no turn off functionality
+- no backwards beep
+- SPD_MODE is used to both wheels turn at the same speed (be careful with the phase/hall combination or it will go to max speed)
+
+This firmare will be used on a robot with the TIP127 removed and Drain/Source shorted so that the robot cannot turn off, the only way to turn it off is to disconnect the battery.
+This also means the capacitors will be always discharged when the battery is removed.
+
+To be checked:
+- if the MCU resets while wheels are spinning, the offset calibration will be wrong. When the input is close to zero, motor will enable and things can go horribly wrong. Check if it's worth saving the offsets. 
+
 Table of Contents
 =======================
 

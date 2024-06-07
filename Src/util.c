@@ -1550,8 +1550,8 @@ void poweroff(void) {
     HAL_Delay(100);
   }
   saveConfig();
-  HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
-  while(1) {}
+  //HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
+  //while(1) {}
 }
 
 
