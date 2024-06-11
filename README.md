@@ -4,6 +4,7 @@
 - the board is not turning off when the button is pressed
 - no backwards beep
 - SPD_MODE is used so both wheels turn at the same speed (be careful with the phase/hall combination or it will go to max speed)
+- keep highest priority/preemption for ADC interrupt as suggested [here](https://github.com/EFeru/hoverboard-firmware-hack-FOC/pull/496), this could prevent from delays in the current control/limitation
 
 This firmare will be used on a robot with the TIP127 removed and Drain/Source shorted so that the robot cannot turn off, the only way to turn it off is to disconnect the battery.
 This also means the capacitors will be always discharged when the battery is removed.
