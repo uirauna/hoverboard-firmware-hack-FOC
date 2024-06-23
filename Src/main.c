@@ -70,6 +70,15 @@ extern uint8_t     inIdx_prev;
 extern InputStruct input1[];            // input structure
 extern InputStruct input2[];            // input structure
 
+#ifdef CONTROL_IBUS
+extern int16_T swa;
+extern int16_T swb;
+extern int16_T swc;
+extern int16_T swd;
+extern int16_T vra;
+extern int16_T vrb;
+#endif
+
 extern int16_t speedAvg;                // Average measured speed
 extern int16_t speedAvgAbs;             // Average measured speed in absolute
 extern volatile uint32_t timeoutCntGen; // Timeout counter for the General timeout (PPM, PWM, Nunchuk)
@@ -256,14 +265,27 @@ int main(void) {
 
     #ifndef VARIANT_TRANSPOTTER
       // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
-      if (enable == 0 && !rtY_Left.z_errCode && !rtY_Right.z_errCode && 
-          ABS(input1[inIdx].cmd) < 50 && ABS(input2[inIdx].cmd) < 50){
+      if (enable == 0 && 
+          !rtY_Left.z_errCode && !rtY_Right.z_errCode && 
+          ABS(input1[inIdx].cmd) < 50 && ABS(input2[inIdx].cmd) < 50 &&
+          swa){
         beepShort(6);                     // make 2 beeps indicating the motor enable
         beepShort(4); HAL_Delay(100);
         steerFixdt = speedFixdt = 0;      // reset filters
         enable = 1;                       // enable motors
         #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
         printf("-- Motors enabled --\r\n");
+        #endif
+      }
+
+        if (enable == 1 && !swa){
+        beepShort(4);                     // make 2 beeps indicating the motor enable
+        beepShort(6); HAL_Delay(100);
+        steerFixdt = speedFixdt = 0;      // reset filters
+        enable = 0;                       // enable motors
+
+        #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+        printf("-- Motors disabled --\r\n");
         #endif
       }
 
@@ -313,6 +335,12 @@ int main(void) {
           }
         }
       #endif
+      
+      // If this switch is ON, invert both the speed and steer values
+      if (swb){
+        input1[inIdx].cmd *= -1;
+        input2[inIdx].cmd *= -1;
+      }
 
       // ####### LOW-PASS FILTER #######
       rateLimiter16(input1[inIdx].cmd, rate, &steerRateFixdt);

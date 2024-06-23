@@ -14,6 +14,8 @@ This branch is for combat robot drive:
 - no turn off functionality
 - no backwards beep
 - SPD_MODE is used to both wheels turn at the same speed (be careful with the phase/hall combination or it will go to max speed)
+- SWA switch is used to enable/disable the motos
+- SWB switch is used to invert speed and steer commands in case the robot is upside down
 
 This firmare will be used on a robot with the TIP127 removed and Drain/Source shorted so that the robot cannot turn off, the only way to turn it off is to disconnect the battery.
 This also means the capacitors will be always discharged when the battery is removed.

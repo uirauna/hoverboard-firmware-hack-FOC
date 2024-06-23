@@ -99,6 +99,16 @@ InputStruct input1[INPUTS_NR] = { {0, 0, 0, PRI_INPUT1} };
 InputStruct input2[INPUTS_NR] = { {0, 0, 0, PRI_INPUT2} };
 #endif
 
+#ifdef CONTROL_IBUS
+int16_T swa;
+int16_T swb;
+int16_T swc;
+int16_T swd;
+int16_T vra;
+int16_T vrb;
+#endif
+
+
 int16_t  speedAvg;                      // average measured speed
 int16_t  speedAvgAbs;                   // average measured speed in absolute
 uint8_t  timeoutFlgADC    = 0;          // Timeout Flag for ADC Protection:    0 = OK, 1 = Problem detected (line disconnected or wrong ADC data)
@@ -874,7 +884,13 @@ void readInputRaw(void) {
           ibusR_captured_value[(i/2)] = CLAMP(commandR.channels[i] + (commandR.channels[i+1] << 8) - 1000, 0, INPUT_MAX); // 1000-2000 -> 0-1000
         }
         input1[inIdx].raw = (ibusR_captured_value[0] - 500) * 2;
-        input2[inIdx].raw = (ibusR_captured_value[1] - 500) * 2; 
+        input2[inIdx].raw = (ibusR_captured_value[1] - 500) * 2;
+        swa = ibusR_captured_value[6] > 850;
+        swb = ibusR_captured_value[7] > 850;
+        vra = ibusR_captured_value[4];
+        vrb = ibusR_captured_value[5];
+        swc = ibusR_captured_value[8] > 850 ? 2 : ibusR_captured_value[8] > 250 ? 1 : 0;
+        swd = ibusR_captured_value[9] > 850;
       #else
         input1[inIdx].raw = commandR.steer;
         input2[inIdx].raw = commandR.speed;
