@@ -26,13 +26,13 @@ This repository implements Field Oriented Control (FOC) for stock hoverboards. C
  - smooth torque output and improved motor efficiency. Thus, lower energy consumption
  - field weakening to increase maximum speed range
 
-<<<<<<< HEAD
 This branch is for combat robot drive:
 - battery level alert and turn off are disabled
 - no inactivity check
 - no turn off functionality
 - no backwards beep
 - SPD_MODE is used to both wheels turn at the same speed (be careful with the phase/hall combination or it will go to max speed)
+- keep highest priority/preemption for ADC interrupt as suggested [here](https://github.com/EFeru/hoverboard-firmware-hack-FOC/pull/496), this could prevent from delays in the current control/limitation
 - SWA switch is used to enable/disable the motos
 - SWB switch is used to invert speed and steer commands in case the robot is upside down
 
@@ -42,8 +42,6 @@ This also means the capacitors will be always discharged when the battery is rem
 To be checked:
 - if the MCU resets while wheels are spinning, the offset calibration will be wrong. When the input is close to zero, motor will enable and things can go horribly wrong. Check if it's worth saving the offsets. 
 
-=======
->>>>>>> a17614f952bba2f7f51e20cdd6243e6138fc4697
 Table of Contents
 =======================
 
