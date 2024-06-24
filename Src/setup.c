@@ -41,6 +41,7 @@ pb10 usart3 dma1 channel2/3
 
 TIM_HandleTypeDef htim_right;
 TIM_HandleTypeDef htim_left;
+TIM_HandleTypeDef htim_out;
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 I2C_HandleTypeDef hi2c2;
@@ -415,6 +416,8 @@ void MX_GPIO_Init(void) {
   GPIO_InitStruct.Pin = OFF_PIN;
   HAL_GPIO_Init(OFF_PORT, &GPIO_InitStruct);
 
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
 
@@ -441,10 +444,10 @@ void MX_GPIO_Init(void) {
 
   //Analog in
   #if !defined(SUPPORT_BUTTONS_LEFT)
-  GPIO_InitStruct.Pin = GPIO_PIN_3;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = GPIO_PIN_2;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  //GPIO_InitStruct.Pin = GPIO_PIN_3;
+  //HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  //GPIO_InitStruct.Pin = GPIO_PIN_2;
+  //HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
   #endif
 
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -484,6 +487,40 @@ void MX_GPIO_Init(void) {
 
   GPIO_InitStruct.Pin = RIGHT_TIM_WL_PIN;
   HAL_GPIO_Init(RIGHT_TIM_WL_PORT, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = GPIO_PIN_2;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+}
+
+void MX_TIM2_Init(void) {
+  __HAL_RCC_TIM2_CLK_ENABLE();
+  
+  TIM_MasterConfigTypeDef sMasterConfig;
+  TIM_OC_InitTypeDef sConfigOC;
+
+  htim_out.Instance               = TIM2;
+  htim_out.Init.Prescaler         = 0;
+  htim_out.Init.CounterMode       = TIM_COUNTERMODE_UP;
+  htim_out.Init.Period            = 64000000 / 6400;
+  htim_out.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
+  htim_out.Init.RepetitionCounter = 0;
+  htim_out.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  HAL_TIM_PWM_Init(&htim_out);
+
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode     = TIM_MASTERSLAVEMODE_DISABLE;
+  HAL_TIMEx_MasterConfigSynchronization(&htim_out, &sMasterConfig);
+
+  sConfigOC.OCMode       = TIM_OCMODE_PWM1;
+  sConfigOC.OCPolarity   = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode   = TIM_OCFAST_DISABLE;
+  HAL_TIM_PWM_ConfigChannel(&htim_out, &sConfigOC, TIM_CHANNEL_3);
+  
+  TIM2->BDTR &= ~TIM_BDTR_MOE;
+
+  HAL_TIM_PWM_Start(&htim_out, TIM_CHANNEL_3);  
+  __HAL_TIM_ENABLE(&htim_out);
 }
 
 void MX_TIM_Init(void) {

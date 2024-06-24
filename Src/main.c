@@ -167,6 +167,11 @@ static int16_t    speed;                // local variable for speed. -1000 to 10
   static int32_t  speedFixdt;           // local fixed-point variable for speed low-pass filter
 #endif
 
+static int16_t  weapon;
+static int16_t  weaponRateFixdt;      // local fixed-point variable for weapon rate limiter
+static int32_t  weaponFixdt;          // local fixed-point variable for weapon low-pass filter
+  
+
 static uint32_t    buzzerTimer_prev = 0;
 static uint32_t    inactivity_timeout_counter;
 static MultipleTap MultipleTapBrake;    // define multiple tap functionality for the Brake pedal
@@ -205,6 +210,7 @@ int main(void) {
   __HAL_RCC_DMA1_CLK_DISABLE();
   MX_GPIO_Init();
   MX_TIM_Init();
+  MX_TIM2_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
   BLDC_Init();        // BLDC Controller Init
@@ -271,22 +277,45 @@ int main(void) {
           swa){
         beepShort(6);                     // make 2 beeps indicating the motor enable
         beepShort(4); HAL_Delay(100);
-        steerFixdt = speedFixdt = 0;      // reset filters
+        weaponFixdt = steerFixdt = speedFixdt = 0;      // reset filters
         enable = 1;                       // enable motors
+
         #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
         printf("-- Motors enabled --\r\n");
         #endif
       }
 
-        if (enable == 1 && !swa){
+      if (enable == 1 && !swa){
         beepShort(4);                     // make 2 beeps indicating the motor enable
         beepShort(6); HAL_Delay(100);
-        steerFixdt = speedFixdt = 0;      // reset filters
+        weaponFixdt = steerFixdt = speedFixdt = 0;      // reset filters
         enable = 0;                       // enable motors
-
+        
         #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
         printf("-- Motors disabled --\r\n");
         #endif
+      }
+      
+      if (swa && swd){
+        weapon = vra;
+      }else{
+        weapon = 0;
+      }
+
+      rateLimiter16(weapon, 10, &weaponRateFixdt);
+      filtLowPass32(weaponRateFixdt >> 4, FILTER, &weaponFixdt);
+      
+      TIM2->CCR3 = (int16_t)(weaponFixdt >> 16) * 10;
+
+      if (TIM2->CCR3){
+        // Weapon PWM ON
+        TIM2->BDTR |= TIM_BDTR_MOE;
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_SET);
+      }
+      else{
+        // Weapon PWM OFF
+        TIM2->BDTR &= ~TIM_BDTR_MOE;
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_RESET);
       }
 
       // ####### VARIANT_HOVERCAR #######

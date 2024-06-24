@@ -487,7 +487,7 @@
   // #define TANK_STEERING                // use for tank steering, each input controls each wheel 
 
   #if defined(CONTROL_SERIAL_USART3) && !defined(DUAL_INPUTS)
-    #define DEBUG_SERIAL_USART2           // left sensor cable debug
+    //#define DEBUG_SERIAL_USART2           // left sensor cable debug
   #elif defined(DEBUG_SERIAL_USART2) && !defined(DUAL_INPUTS)
     #define DEBUG_SERIAL_USART3           // right sensor cable debug
   #endif
